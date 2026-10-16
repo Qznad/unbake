@@ -1,0 +1,8 @@
+/target
+
+# audio test files and pipeline outputs (copyright + size)
+*.mp3
+*.wav
+*_rebuild/
+separated/
+docs/
