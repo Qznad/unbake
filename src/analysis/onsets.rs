@@ -77,10 +77,15 @@ fn local_mean(values: &[f32], i: usize, reach: usize) -> f32 {
     crate::audio::math::mean(&values[from..=to])
 }
 
-// finds onsets across the whole spectrum
+// finds onsets across the whole spectrum, measured against the stem's own strongest attacks
 pub fn detect(spec: &Spectrogram) -> Vec<Onset> {
     let curve = novelty(spec, 30.0, 16000.0);
-    pick_peaks(&curve, spec.frame_rate(), 0.05)
+    let top = crate::audio::math::percentile(&curve, 0.99);
+    if top < 1e-4 {
+        return Vec::new();
+    }
+    let scaled: Vec<f32> = curve.iter().map(|v| v / top).collect();
+    pick_peaks(&scaled, spec.frame_rate(), 0.15)
 }
 
 // how many onsets in a match ones in b within 50 ms, as precision, recall and their balance

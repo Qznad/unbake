@@ -124,12 +124,17 @@ pub fn build(
         let Some(id) = pattern_ids[clip.pattern] else {
             continue;
         };
+        let mut clip_extra = extra.clone();
+        if clip_extra.len() >= 4 {
+            let number = (items.len() / (32 + extra.len()) + 1) as u32;
+            clip_extra[0..4].copy_from_slice(&number.to_le_bytes());
+        }
         items.extend(item_bytes(
             id,
             scale(clip.start),
             scale(clip.length),
             clip.track,
-            &extra,
+            &clip_extra,
         ));
     }
     let clips = items.len() / (32 + extra.len());

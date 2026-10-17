@@ -96,11 +96,27 @@ pub fn summarize(project: &Project) -> Summary {
     }
 }
 
-// how many bytes one playlist clip takes, fl studio 21 added 28 bytes to each one
+// how many bytes one playlist clip takes, measured from the clips since fl studio 21 and 25 each added more
 pub fn playlist_item_size(project: &Project) -> usize {
-    if project.major_version() >= 21 {
-        60
-    } else {
-        32
+    let guess = match project.major_version() {
+        v if v >= 25 => 80,
+        v if v >= 21 => 60,
+        _ => 32,
+    };
+    let Some(data) = project.events.iter().find_map(|e| match (e.id, &e.value) {
+        (events::PLAYLIST, Value::Data(data)) if !data.is_empty() => Some(data),
+        _ => None,
+    }) else {
+        return guess;
+    };
+    for size in [guess, 32, 60, 80] {
+        let fits = data.len() % size == 0
+            && (0..data.len())
+                .step_by(size)
+                .all(|j| data[j + 4..j + 6] == [0x00, 0x50]);
+        if fits {
+            return size;
+        }
     }
+    guess
 }

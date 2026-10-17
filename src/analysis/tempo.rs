@@ -34,7 +34,7 @@ pub fn analyze(rhythm: &Signal, harmony: &Signal) -> (Tempo, Grid) {
 // finds the tempo and where the beats fall from an onset novelty curve
 pub fn estimate(novelty: &[f32], frame_rate: f64) -> Tempo {
     let curve = prepare(novelty);
-    let coarse = autocorrelation_bpm(&curve, frame_rate);
+    let coarse = best_related(&curve, frame_rate, autocorrelation_bpm(&curve, frame_rate));
 
     let mut best_bpm = coarse;
     let mut best_score = f64::MIN;
@@ -117,6 +117,25 @@ fn autocorrelation_bpm(curve: &[f32], frame_rate: f64) -> f64 {
         0.0
     };
     60.0 * frame_rate / (best as f64 + shift)
+}
+
+// tries tempos related to a guess, double, half, three halves and two thirds, and keeps the best lined up one
+fn best_related(curve: &[f32], frame_rate: f64, guess: f64) -> f64 {
+    let mut best = guess;
+    let mut best_score = f64::MIN;
+    for ratio in [1.0, 2.0, 0.5, 1.5, 2.0 / 3.0] {
+        let bpm = guess * ratio;
+        if !(60.0..=200.0).contains(&bpm) {
+            continue;
+        }
+        let (score, _) = comb(curve, frame_rate * 60.0 / bpm);
+        let weighted = score * preference(bpm);
+        if weighted > best_score {
+            best_score = weighted;
+            best = bpm;
+        }
+    }
+    best
 }
 
 // how likely a tempo is before listening, highest at 120 bpm and halving about an octave away
