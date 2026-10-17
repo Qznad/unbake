@@ -179,7 +179,7 @@ fn set_tempo(project: &mut Project, bpm: f64) {
     }
 }
 
-// the channel whose name suggests a part, like a channel called "808 kick" for the kick
+// the channel whose name suggests a part, earlier words win, so a snare channel beats a clap channel
 fn find_channel(channels: &[Channel], part: Part) -> Option<u16> {
     let words: &[&str] = match part {
         Part::Kick => &["kick"],
@@ -189,10 +189,11 @@ fn find_channel(channels: &[Channel], part: Part) -> Option<u16> {
         Part::Melody => &["lead", "melody", "pluck"],
         Part::Chords => &["chord", "pad", "keys", "piano"],
     };
-    for channel in channels {
-        let name = channel.name.to_lowercase();
-        if words.iter().any(|w| name.contains(w)) {
-            return Some(channel.id);
+    for word in words {
+        for channel in channels {
+            if channel.name.to_lowercase().contains(word) {
+                return Some(channel.id);
+            }
         }
     }
     None
