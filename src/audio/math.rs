@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 // converts a number of samples to seconds
 pub fn samples_to_seconds(samples: u32, sample_rate: u32) -> f64 {
     samples as f64 / sample_rate as f64

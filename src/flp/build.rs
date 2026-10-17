@@ -17,10 +17,12 @@ const PARTS: [Part; 6] = [
 
 pub struct Built {
     pub project: Project,
+    pub patterns: usize,
+    pub clips: usize,
     pub warnings: Vec<String>,
 }
 
-// fills a copy of a template project with our tempo, patterns, playlist clips, markers and track names
+// fills a copy of a template with our tempo, patterns, clips, markers and track names, skipping empty patterns
 pub fn build(
     template: &Project,
     arrangement: &Arrangement,
@@ -52,9 +54,10 @@ pub fn build(
         }
     }
 
-    let first_id = summary.patterns.iter().map(|p| p.id).max().unwrap_or(0) + 1;
+    let mut next_id = summary.patterns.iter().map(|p| p.id).max().unwrap_or(0) + 1;
+    let mut pattern_ids: Vec<Option<u16>> = Vec::new();
     let mut pattern_events = Vec::new();
-    for (i, pattern) in arrangement.patterns.iter().enumerate() {
+    for pattern in &arrangement.patterns {
         let mut notes = Vec::new();
         for note in &pattern.notes {
             let Some(&(_, channel)) = channels.iter().find(|(p, _)| *p == note.part) else {
@@ -69,10 +72,16 @@ pub fn build(
                 note.velocity,
             ));
         }
+        if notes.is_empty() {
+            pattern_ids.push(None);
+            continue;
+        }
+        pattern_ids.push(Some(next_id));
         pattern_events.push(Event {
             id: events::PATTERN_NEW,
-            value: Value::Word(first_id + i as u16),
+            value: Value::Word(next_id),
         });
+        next_id += 1;
         pattern_events.push(Event {
             id: events::PATTERN_NAME,
             value: Value::Data(events::encode_text(&pattern.name)),
@@ -112,14 +121,18 @@ pub fn build(
 
     let mut items = Vec::new();
     for clip in &arrangement.clips {
+        let Some(id) = pattern_ids[clip.pattern] else {
+            continue;
+        };
         items.extend(item_bytes(
-            first_id + clip.pattern as u16,
+            id,
             scale(clip.start),
             scale(clip.length),
             clip.track,
             &extra,
         ));
     }
+    let clips = items.len() / (32 + extra.len());
     project.events[playlist].value = Value::Data(items);
 
     let mut marker_events = Vec::new();
@@ -139,7 +152,12 @@ pub fn build(
         name_track(&mut project, arrangement_start, track as u32 + 1, name);
     }
 
-    Ok(Built { project, warnings })
+    Ok(Built {
+        project,
+        patterns: pattern_ids.iter().flatten().count(),
+        clips,
+        warnings,
+    })
 }
 
 // sets the project tempo, which fl studio stores as bpm times 1000
@@ -161,7 +179,7 @@ fn set_tempo(project: &mut Project, bpm: f64) {
     }
 }
 
-// the channel whose name suggests a part, like a channel called "808 Kick" for the kick
+// the channel whose name suggests a part, like a channel called "808 kick" for the kick
 fn find_channel(channels: &[Channel], part: Part) -> Option<u16> {
     let words: &[&str] = match part {
         Part::Kick => &["kick"],

@@ -1,8 +1,10 @@
+pub mod chords;
 pub mod chroma;
 pub mod drums;
 pub mod key;
 pub mod notes;
 pub mod onsets;
 pub mod pitch;
+pub mod sections;
 pub mod spectrum;
 pub mod tempo;

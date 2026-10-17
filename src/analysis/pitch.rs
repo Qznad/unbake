@@ -1,3 +1,5 @@
+use crate::analysis::spectrum::Spectrogram;
+use crate::audio::math;
 use crate::audio::signal::Signal;
 
 const WINDOW: usize = 512;
@@ -112,6 +114,52 @@ fn best_lag(diff: &[f32], min_lag: usize, max_lag: usize) -> (f32, f32) {
         0.0
     };
     (chosen as f32 + shift, (1.0 - b).clamp(0.0, 1.0))
+}
+
+// finds the strongest note in a mix every frame, taking the octave above when it is nearly as strong
+pub fn salience_track(spec: &Spectrogram, low_key: u8, high_key: u8) -> Vec<PitchFrame> {
+    let mut frames = Vec::with_capacity(spec.frames.len());
+    for frame in &spec.frames {
+        let mut best_key = low_key;
+        let mut best = 0.0f32;
+        let mut total = 0.0f32;
+        for key in low_key..=high_key {
+            let s = harmonic_sum(spec, frame, key);
+            total += s;
+            if s > best {
+                best = s;
+                best_key = key;
+            }
+        }
+        if best_key + 12 <= high_key && harmonic_sum(spec, frame, best_key + 12) > 0.6 * best {
+            best_key += 12;
+            best = harmonic_sum(spec, frame, best_key);
+        }
+        let average = total / (high_key - low_key + 1) as f32;
+        let ratio = if average > 0.0 { best / average } else { 0.0 };
+        frames.push(PitchFrame {
+            hz: math::midi_to_hz(best_key as f32),
+            clarity: if ratio > 1.0 { 1.0 - 1.0 / ratio } else { 0.0 },
+            level: best,
+        });
+    }
+    frames
+}
+
+// the spectrum at a note's first six harmonics, each one counting a little less than the one before
+fn harmonic_sum(spec: &Spectrogram, frame: &[f32], key: u8) -> f32 {
+    let f0 = math::midi_to_hz(key as f32);
+    let mut sum = 0.0;
+    let mut weight = 1.0;
+    for harmonic in 1..=6 {
+        let bin = spec.hz_bin(f0 * harmonic as f32);
+        if bin + 1 >= frame.len() {
+            break;
+        }
+        sum += weight * frame[bin - 1].max(frame[bin]).max(frame[bin + 1]);
+        weight *= 0.8;
+    }
+    sum
 }
 
 #[cfg(test)]

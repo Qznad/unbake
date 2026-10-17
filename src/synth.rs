@@ -18,28 +18,59 @@ pub struct Sound {
     pub wave: Wave,
     pub cutoff: f32,
     pub release: f32,
+    pub gain: f32,
 }
 
-impl Sound {
-    // a reasonable starting sound for a part
-    pub fn default_for(part: Part) -> Sound {
-        match part {
-            Part::Bass => Sound {
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct Voices {
+    pub bass: Sound,
+    pub melody: Sound,
+    pub chords: Sound,
+}
+
+impl Voices {
+    // the starting sounds before any matching
+    pub fn defaults() -> Voices {
+        Voices {
+            bass: Sound {
                 wave: Wave::Saw,
                 cutoff: 800.0,
                 release: 0.02,
+                gain: 1.0,
             },
-            Part::Melody => Sound {
+            melody: Sound {
                 wave: Wave::Square,
                 cutoff: 3200.0,
                 release: 0.08,
+                gain: 1.0,
             },
-            _ => Sound {
+            chords: Sound {
                 wave: Wave::Saw,
                 cutoff: 1600.0,
                 release: 0.25,
+                gain: 0.5,
             },
         }
+    }
+
+    // the sound used for a part
+    pub fn get(&self, part: Part) -> Sound {
+        match part {
+            Part::Bass => self.bass,
+            Part::Melody => self.melody,
+            _ => self.chords,
+        }
+    }
+
+    // a copy with the sound of one part replaced
+    pub fn with(&self, part: Part, sound: Sound) -> Voices {
+        let mut copy = *self;
+        match part {
+            Part::Bass => copy.bass = sound,
+            Part::Melody => copy.melody = sound,
+            _ => copy.chords = sound,
+        }
+        copy
     }
 }
 
@@ -62,8 +93,8 @@ impl Noise {
     }
 }
 
-// plays notes and returns the audio, drum parts use built in drum sounds and the rest use the sound
-pub fn render(notes: &[Note], grid: &Grid, sound: &Sound, seconds: f64, rate: u32) -> Signal {
+// plays notes and returns the audio, drums use built in drum sounds and other parts their voice
+pub fn render(notes: &[Note], grid: &Grid, voices: &Voices, seconds: f64, rate: u32) -> Signal {
     let mut out = Signal::silence(seconds, rate);
     let mut noise = Noise::new(7);
     for note in notes {
@@ -80,7 +111,7 @@ pub fn render(notes: &[Note], grid: &Grid, sound: &Sound, seconds: f64, rate: u3
                 length,
                 note.key,
                 level,
-                sound,
+                &voices.get(note.part),
                 rate,
             ),
         }
@@ -118,7 +149,7 @@ fn add_tone(
         if i >= held {
             envelope *= (-((i - held) as f32 / rate) / release).exp();
         }
-        *slot += 0.3 * level * envelope * filtered;
+        *slot += 0.3 * sound.gain * level * envelope * filtered;
     }
 }
 
@@ -178,5 +209,37 @@ fn add_hat(out: &mut [f32], start: usize, level: f32, rate: u32, noise: &mut Noi
         let white = noise.next();
         *slot += 0.2 * level * (white - previous) * (-t / 0.03).exp();
         previous = white;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // a rendered a4 on a sine wave is found again at 440 hz by the pitch tracker
+    #[test]
+    fn renders_the_right_pitch() {
+        let grid = Grid {
+            bpm: 120.0,
+            origin: 0.0,
+        };
+        let note = Note {
+            part: Part::Melody,
+            key: 69,
+            velocity: 100,
+            start: 0,
+            length: 192,
+        };
+        let mut voices = Voices::defaults();
+        voices.melody = Sound {
+            wave: Wave::Sine,
+            cutoff: 8000.0,
+            release: 0.05,
+            gain: 1.0,
+        };
+        let signal = render(&[note], &grid, &voices, 1.5, 11025);
+        let frames = crate::analysis::pitch::track(&signal, 128, 100.0, 1000.0);
+        let hz = frames[frames.len() / 3].hz;
+        assert!((hz - 440.0).abs() < 3.0, "got {}", hz);
     }
 }

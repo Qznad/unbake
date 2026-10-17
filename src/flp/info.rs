@@ -1,18 +1,22 @@
 use crate::flp::events::{self, Project, Value};
+use serde::Serialize;
 
 pub const NOTE_SIZE: usize = 24;
 
+#[derive(Serialize)]
 pub struct Channel {
     pub id: u16,
     pub name: String,
 }
 
+#[derive(Serialize)]
 pub struct PatternInfo {
     pub id: u16,
     pub name: String,
     pub notes: usize,
 }
 
+#[derive(Serialize)]
 pub struct Summary {
     pub version: String,
     pub ppq: u16,

@@ -9,6 +9,8 @@ mod arrange;
 mod audio;
 mod compare;
 mod flp;
+mod matching;
+mod mcp;
 mod midi;
 mod music;
 mod rebuild;
@@ -16,7 +18,6 @@ mod report;
 mod separate;
 mod synth;
 
-use audio::signal::Signal;
 use audio::wav::Wav;
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
@@ -37,7 +38,7 @@ enum Command {
     #[command(about = "show the format and level of an audio file")]
     Info { file: PathBuf },
 
-    #[command(about = "detect the tempo and first bar of a song")]
+    #[command(about = "detect the tempo, key and first bar of a song")]
     Analyze { file: PathBuf },
 
     #[command(about = "separate a song into drums, bass, other and vocals with demucs")]
@@ -62,13 +63,18 @@ enum Command {
         stems: Option<PathBuf>,
         #[arg(
             long,
-            help = "an FL Studio project with channels named Kick, Snare, Hat and Bass"
+            help = "an FL Studio project with channels named Kick, Snare, Hat, Bass, Lead and Pad"
         )]
         template: Option<PathBuf>,
+        #[arg(long, help = "skip tuning the synth sounds to the stems, faster")]
+        no_match: bool,
     },
 
     #[command(about = "list the version, tempo, channels and patterns of an fl studio project")]
     FlpInfo { file: PathBuf },
+
+    #[command(about = "run as an mcp server so ai agents can use unbake, over stdin and stdout")]
+    Mcp,
 }
 
 // runs the program and prints any error
@@ -89,11 +95,14 @@ fn run(command: Command) -> Result<(), String> {
             Ok(())
         }
         Command::Analyze { file } => {
-            let mix = Signal::from_wav(&load(&file)?);
-            let (tempo, grid) = analysis::tempo::analyze(&mix, &mix);
-            println!("Tempo:       {} bpm", tempo.bpm);
-            println!("First bar:   {:.3} s", grid.origin);
-            println!("Bars:        {}", grid.bar_count(mix.duration()));
+            let info = rebuild::analyze_song(&file)?;
+            println!("Tempo:       {} bpm", info.tempo_bpm);
+            println!(
+                "Key:         {} (same notes as {})",
+                info.key, info.relative_key
+            );
+            println!("First bar:   {:.3} s", info.first_bar_seconds);
+            println!("Bars:        {}", info.bars);
             Ok(())
         }
         Command::Split { file, out } => {
@@ -103,6 +112,7 @@ fn run(command: Command) -> Result<(), String> {
                     out: None,
                     stems: None,
                     template: None,
+                    match_sounds: false,
                 })
                 .join("stems")
             });
@@ -115,12 +125,14 @@ fn run(command: Command) -> Result<(), String> {
             out,
             stems,
             template,
+            no_match,
         } => {
             let options = rebuild::Options {
                 input: file,
                 out,
                 stems,
                 template,
+                match_sounds: !no_match,
             };
             let report = rebuild::run(&options)?;
             println!("Tempo:       {} bpm", report.tempo_bpm);
@@ -129,6 +141,13 @@ fn run(command: Command) -> Result<(), String> {
                 report.key, report.relative_key
             );
             println!("Bars:        {}", report.bars);
+            let sections: Vec<String> = report
+                .sections
+                .iter()
+                .map(|s| format!("{} ({} bars)", s.name, s.bars))
+                .collect();
+            println!("Sections:    {}", sections.join(", "));
+            println!("Chords:      {}", report.chords.join(" "));
             for part in &report.parts {
                 let scores: Vec<String> = part
                     .scores
@@ -141,6 +160,12 @@ fn run(command: Command) -> Result<(), String> {
                     part.notes,
                     part.detail,
                     scores.join(", ")
+                );
+            }
+            for m in &report.sound_matching {
+                println!(
+                    "Sounds:      {} stem similarity {:.2} -> {:.2} after {} renders",
+                    m.stem, m.score_before, m.score_after, m.renders
                 );
             }
             println!("FL project:  {}", report.flp);
@@ -177,6 +202,7 @@ fn run(command: Command) -> Result<(), String> {
             println!("Playlist:    {} clips", summary.playlist_items);
             Ok(())
         }
+        Command::Mcp => mcp::serve(),
     }
 }
 
