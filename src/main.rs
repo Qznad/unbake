@@ -5,12 +5,16 @@
 )]
 
 mod analysis;
+mod arrange;
 mod audio;
+mod compare;
+mod flp;
 mod midi;
 mod music;
 mod rebuild;
 mod report;
 mod separate;
+mod synth;
 
 use audio::signal::Signal;
 use audio::wav::Wav;
@@ -47,14 +51,24 @@ enum Command {
         out: Option<PathBuf>,
     },
 
-    #[command(about = "rebuild a song as stems, midi and a report")]
+    #[command(
+        about = "rebuild a song as stems, midi, an fl studio project, a preview and a report"
+    )]
     Rebuild {
         file: PathBuf,
         #[arg(short, long, help = "output folder [default: <song>_rebuild]")]
         out: Option<PathBuf>,
         #[arg(long, help = "use the stems in this folder instead of running demucs")]
         stems: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "an FL Studio project with channels named Kick, Snare, Hat and Bass"
+        )]
+        template: Option<PathBuf>,
     },
+
+    #[command(about = "list the version, tempo, channels and patterns of an fl studio project")]
+    FlpInfo { file: PathBuf },
 }
 
 // runs the program and prints any error
@@ -88,6 +102,7 @@ fn run(command: Command) -> Result<(), String> {
                     input: file.clone(),
                     out: None,
                     stems: None,
+                    template: None,
                 })
                 .join("stems")
             });
@@ -95,19 +110,71 @@ fn run(command: Command) -> Result<(), String> {
             println!("Stems saved in {}", dir.display());
             Ok(())
         }
-        Command::Rebuild { file, out, stems } => {
+        Command::Rebuild {
+            file,
+            out,
+            stems,
+            template,
+        } => {
             let options = rebuild::Options {
                 input: file,
                 out,
                 stems,
+                template,
             };
             let report = rebuild::run(&options)?;
             println!("Tempo:       {} bpm", report.tempo_bpm);
+            println!(
+                "Key:         {} (same notes as {})",
+                report.key, report.relative_key
+            );
             println!("Bars:        {}", report.bars);
             for part in &report.parts {
-                println!("{:<12} {} notes", format!("{}:", part.part), part.notes);
+                let scores: Vec<String> = part
+                    .scores
+                    .iter()
+                    .map(|s| format!("{} {:.2}", s.dimension, s.value))
+                    .collect();
+                println!(
+                    "{:<12} {} notes ({}), {}",
+                    format!("{}:", part.part),
+                    part.notes,
+                    part.detail,
+                    scores.join(", ")
+                );
             }
-            println!("Output:      {}", rebuild::output_dir(&options).display());
+            println!("FL project:  {}", report.flp);
+            for warning in &report.warnings {
+                println!("Warning:     {}", warning);
+            }
+            println!(
+                "Report:      {}",
+                rebuild::output_dir(&options).join("report.html").display()
+            );
+            Ok(())
+        }
+        Command::FlpInfo { file } => {
+            let project = flp::events::read(&file)?;
+            let summary = flp::info::summarize(&project);
+            println!("Version:     {}", summary.version);
+            println!("PPQ:         {}", summary.ppq);
+            match summary.tempo {
+                Some(bpm) => println!("Tempo:       {} bpm", bpm),
+                None => println!("Tempo:       not set"),
+            }
+            println!("Events:      {}", project.events.len());
+            println!("Channels:    {}", summary.channels.len());
+            for channel in &summary.channels {
+                println!("  {:>3}  {}", channel.id, channel.name);
+            }
+            println!("Patterns:    {}", summary.patterns.len());
+            for pattern in &summary.patterns {
+                println!(
+                    "  {:>3}  {} ({} notes)",
+                    pattern.id, pattern.name, pattern.notes
+                );
+            }
+            println!("Playlist:    {} clips", summary.playlist_items);
             Ok(())
         }
     }

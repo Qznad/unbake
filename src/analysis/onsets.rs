@@ -4,7 +4,6 @@ use crate::analysis::spectrum::Spectrogram;
 pub struct Onset {
     pub time: f64,
     pub frame: usize,
-    pub strength: f32,
 }
 
 // how much new sound appears in each frame between two frequencies, on a log scale
@@ -54,7 +53,6 @@ pub fn pick_peaks(novelty: &[f32], frame_rate: f64, min_strength: f32) -> Vec<On
         onsets.push(Onset {
             time: i as f64 / frame_rate,
             frame: i,
-            strength: value,
         });
     }
     onsets

@@ -80,22 +80,6 @@ impl Spectrogram {
     pub fn frame_rate(&self) -> f64 {
         self.sample_rate as f64 / self.hop as f64
     }
-
-    // the frame closest to a time in seconds
-    pub fn time_frame(&self, time: f64) -> usize {
-        let frame = (time * self.frame_rate()).round().max(0.0) as usize;
-        frame.min(self.frames.len().saturating_sub(1))
-    }
-
-    // the total energy between two frequencies in one frame
-    pub fn band_energy(&self, frame: usize, low_hz: f32, high_hz: f32) -> f32 {
-        let mut sum = 0.0;
-        for bin in self.hz_bin(low_hz)..=self.hz_bin(high_hz) {
-            let m = self.frames[frame][bin];
-            sum += m * m;
-        }
-        sum
-    }
 }
 
 // a window that fades each frame in and out so the edges don't click
