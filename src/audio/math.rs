@@ -1,4 +1,4 @@
-// Not every helper is used by main yet; the next lessons will use them.
+// some helpers are not used yet, this keeps the compiler quiet about them
 #![allow(dead_code)]
 
 pub fn samples_to_seconds(samples: u32, sample_rate: u32) -> f64 {
@@ -19,6 +19,28 @@ pub fn ms_per_step(bpm: f64) -> f64 {
 
 pub fn peak(samples: &[i16]) -> i32 {
     samples.iter().map(|&s| (s as i32).abs()).max().unwrap_or(0)
+}
+
+// peak level in decibels below full scale, 0 is the loudest possible
+pub fn peak_dbfs(peak: i32) -> f64 {
+    if peak == 0 {
+        return f64::NEG_INFINITY; // silence
+    }
+    20.0 * (peak as f64 / 32768.0).log10()
+}
+
+// averages the channels of each frame into one signal between -1 and 1
+pub fn to_mono(samples: &[i16], channels: u16) -> Vec<f32> {
+    let channels = channels as usize;
+    let mut mono = Vec::with_capacity(samples.len() / channels);
+    for frame in samples.chunks_exact(channels) {
+        let mut sum: f32 = 0.0;
+        for &s in frame {
+            sum += s as f32;
+        }
+        mono.push(sum / channels as f32 / 32768.0);
+    }
+    mono
 }
 
 pub fn to_float(samples: &[i16]) -> Vec<f32> {
