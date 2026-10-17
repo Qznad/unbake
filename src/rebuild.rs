@@ -2,7 +2,7 @@ use crate::analysis::chords::{self, ChordSpan};
 use crate::analysis::sections;
 use crate::analysis::spectrum::{HARMONIC_FACTOR, HOP, Spectrogram};
 use crate::analysis::{chroma, drums, key, notes, onsets, pitch, tempo};
-use crate::arrange::{self, Lane};
+use crate::arrange::{self, Arrangement, Lane};
 use crate::audio::signal::Signal;
 use crate::audio::{convert, loudness, math, wav};
 use crate::compare;
@@ -127,6 +127,25 @@ pub fn run(options: &Options) -> Result<Report, String> {
     });
     let chord_notes = chords::to_notes(&chord_spans);
 
+    progress("finding the loops each part repeats");
+    let mut bass_notes = bass_notes;
+    notes::fold_octaves(&mut bass_notes, 36);
+    let names = ["drums", "bass", "melody", "chords"];
+    let lanes: Vec<Lane> = names
+        .iter()
+        .zip([drum_notes, bass_notes, melody_notes, chord_notes])
+        .map(|(name, notes)| Lane {
+            name: capitalize(name),
+            notes,
+        })
+        .collect();
+    let arrangement = arrange::arrange(&lanes);
+    let mut cleaned = arrange::expand(&arrangement, lanes.len());
+    let chord_notes = cleaned.pop().unwrap_or_default();
+    let melody_notes = cleaned.pop().unwrap_or_default();
+    let bass_notes = cleaned.pop().unwrap_or_default();
+    let drum_notes = cleaned.pop().unwrap_or_default();
+
     progress("writing midi");
     let parts = [
         ("drums", 9, &drum_notes),
@@ -151,15 +170,17 @@ pub fn run(options: &Options) -> Result<Report, String> {
     }
     midi::write(&out.join("midi/song.mid"), grid.bpm, &tracks, &markers)?;
 
-    let lanes: Vec<Lane> = tracks
-        .iter()
-        .map(|t| Lane {
-            name: capitalize(&t.name),
-            notes: t.notes.clone(),
-        })
-        .collect();
     let mut warnings = Vec::new();
-    let flp_status = write_flp(options, &out, &lanes, &grid, &markers, &mut warnings)?;
+    let track_names: Vec<String> = lanes.iter().map(|l| l.name.clone()).collect();
+    let flp_status = write_flp(
+        options,
+        &out,
+        &arrangement,
+        &track_names,
+        &grid,
+        &markers,
+        &mut warnings,
+    )?;
 
     let mut other_notes = melody_notes.clone();
     other_notes.extend_from_slice(&chord_notes);
@@ -331,10 +352,12 @@ fn transcribe_chords(other: &Signal, bass: &Signal, grid: &Grid, bars: u32) -> V
 }
 
 // writes the fl studio project when a template was given, and says what happened
+#[allow(clippy::too_many_arguments)]
 fn write_flp(
     options: &Options,
     out: &Path,
-    lanes: &[Lane],
+    arrangement: &Arrangement,
+    track_names: &[String],
     grid: &Grid,
     markers: &[Marker],
     warnings: &mut Vec<String>,
@@ -348,9 +371,7 @@ fn write_flp(
     };
     progress("building the fl studio project");
     let template = flp::events::read(template_path)?;
-    let arrangement = arrange::arrange(lanes);
-    let names: Vec<String> = lanes.iter().map(|l| l.name.clone()).collect();
-    let built = flp::build::build(&template, &arrangement, &names, grid.bpm, markers)?;
+    let built = flp::build::build(&template, arrangement, track_names, grid.bpm, markers)?;
     warnings.extend(built.warnings);
 
     let file = format!("{}.flp", song_name(options));

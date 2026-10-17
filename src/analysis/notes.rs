@@ -149,3 +149,16 @@ fn clean_up(mut notes: Vec<(Note, bool)>) -> Vec<Note> {
     }
     out
 }
+
+// moves a whole line by octaves so its middle note lands in the octave starting at low, keeping its shape
+pub fn fold_octaves(notes: &mut [Note], low: u8) {
+    let mut keys: Vec<u8> = notes.iter().map(|n| n.key).collect();
+    keys.sort();
+    let Some(&median) = keys.get(keys.len() / 2) else {
+        return;
+    };
+    let octaves = (low as i32 - median as i32 + 11).div_euclid(12);
+    for note in notes.iter_mut() {
+        note.key = (note.key as i32 + 12 * octaves).clamp(0, 127) as u8;
+    }
+}
