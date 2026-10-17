@@ -1,6 +1,4 @@
-// reading wav files
-// groups the four header numbers into one value
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct WavInfo {
     pub sample_rate: u32,
     pub channels: u16,
@@ -9,18 +7,55 @@ pub struct WavInfo {
 }
 
 impl WavInfo {
+    // how long the audio lasts in seconds
     pub fn duration_seconds(&self) -> f64 {
         crate::audio::math::samples_to_seconds(self.num_frames, self.sample_rate)
     }
 }
 
-// a whole wav file: header info plus every sample, interleaved as left right left right
 pub struct Wav {
     pub info: WavInfo,
     pub samples: Vec<i16>,
 }
 
-// reads 4 little endian bytes starting at offset as a u32
+impl Wav {
+    // turns the wav into file bytes, a 44 byte header followed by the samples
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let channels = self.info.channels;
+        let sample_rate = self.info.sample_rate;
+        let data_size = (self.samples.len() * 2) as u32;
+
+        let mut out = Vec::with_capacity(44 + data_size as usize);
+
+        out.extend_from_slice(b"RIFF");
+        out.extend_from_slice(&(36 + data_size).to_le_bytes());
+        out.extend_from_slice(b"WAVE");
+
+        out.extend_from_slice(b"fmt ");
+        out.extend_from_slice(&16u32.to_le_bytes());
+        out.extend_from_slice(&1u16.to_le_bytes());
+        out.extend_from_slice(&channels.to_le_bytes());
+        out.extend_from_slice(&sample_rate.to_le_bytes());
+        out.extend_from_slice(&(sample_rate * channels as u32 * 2).to_le_bytes());
+        out.extend_from_slice(&(channels * 2).to_le_bytes());
+        out.extend_from_slice(&16u16.to_le_bytes());
+
+        out.extend_from_slice(b"data");
+        out.extend_from_slice(&data_size.to_le_bytes());
+        for s in &self.samples {
+            out.extend_from_slice(&s.to_le_bytes());
+        }
+
+        out
+    }
+}
+
+// saves a wav file to disk
+pub fn write_wav(path: &str, wav: &Wav) -> Result<(), String> {
+    std::fs::write(path, wav.to_bytes()).map_err(|e| format!("can't write {}: {}", path, e))
+}
+
+// reads 4 bytes at offset as a little endian u32
 pub fn read_u32_le(bytes: &[u8], offset: usize) -> Result<u32, String> {
     if offset + 4 > bytes.len() {
         return Err(format!(
@@ -37,7 +72,7 @@ pub fn read_u32_le(bytes: &[u8], offset: usize) -> Result<u32, String> {
     ]))
 }
 
-// reads 2 little endian bytes starting at offset as a u16
+// reads 2 bytes at offset as a little endian u16
 pub fn read_u16_le(bytes: &[u8], offset: usize) -> Result<u16, String> {
     if offset + 2 > bytes.len() {
         return Err(format!(
@@ -49,24 +84,22 @@ pub fn read_u16_le(bytes: &[u8], offset: usize) -> Result<u16, String> {
     Ok(u16::from_le_bytes([bytes[offset], bytes[offset + 1]]))
 }
 
-// reads a wav file from disk and returns its header info and samples
+// loads a wav file from disk
 pub fn read_wav(path: &str) -> Result<Wav, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("can't read {}: {}", path, e))?;
     parse_wav(&bytes)
 }
 
-// walks through the chunks of a wav file and pulls out the header info
-// layout: "RIFF" [size] "WAVE", then chunks of [4-byte id] [u32 size] [content]
+// turns wav file bytes into header info and samples
 pub fn parse_wav(bytes: &[u8]) -> Result<Wav, String> {
     if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
         return Err("not a WAV file (missing RIFF/WAVE header)".to_string());
     }
 
-    // filled in when we find the chunks; none means "not found yet"
     let mut channels: Option<u16> = None;
     let mut sample_rate: Option<u32> = None;
     let mut bits_per_sample: Option<u16> = None;
-    let mut data: Option<(usize, usize)> = None; // (where the samples start, how many bytes)
+    let mut data: Option<(usize, usize)> = None;
 
     let mut offset = 12;
     while offset + 8 <= bytes.len() {
@@ -89,15 +122,12 @@ pub fn parse_wav(bytes: &[u8]) -> Result<Wav, String> {
             sample_rate = Some(read_u32_le(bytes, content + 4)?);
             bits_per_sample = Some(read_u16_le(bytes, content + 14)?);
         } else if id == b"data" {
-            // some files claim more data than they contain, so cap it at what's left
             data = Some((content, size.min(bytes.len() - content)));
         }
 
-        // chunks with an odd size are followed by one padding byte
         offset = content + size + size % 2;
     }
 
-    // turn each option into a result, so ? can return the error
     let channels = channels.ok_or("missing fmt chunk".to_string())?;
     let sample_rate = sample_rate.ok_or("missing fmt chunk".to_string())?;
     let bits_per_sample = bits_per_sample.ok_or("missing fmt chunk".to_string())?;
@@ -119,10 +149,8 @@ pub fn parse_wav(bytes: &[u8]) -> Result<Wav, String> {
     let bytes_per_frame = channels as usize * (bits_per_sample as usize / 8);
     let num_frames = data_size / bytes_per_frame;
 
-    // only whole frames: a cut-off frame at the end is ignored
     let data_bytes = &bytes[data_start..data_start + num_frames * bytes_per_frame];
 
-    // every 2 bytes is one little-endian i16 sample
     let mut samples = Vec::with_capacity(data_bytes.len() / 2);
     for pair in data_bytes.chunks_exact(2) {
         samples.push(i16::from_le_bytes([pair[0], pair[1]]));
