@@ -8,6 +8,7 @@ mod analysis;
 mod arrange;
 mod audio;
 mod compare;
+mod eval;
 mod flp;
 mod matching;
 mod mcp;
@@ -72,6 +73,9 @@ enum Command {
 
     #[command(about = "list the version, tempo, channels and patterns of an fl studio project")]
     FlpInfo { file: PathBuf },
+
+    #[command(about = "score a rebuild against the fl studio project the song was made from")]
+    Eval { project: PathBuf, rebuild: PathBuf },
 
     #[command(about = "run as an mcp server so ai agents can use unbake, over stdin and stdout")]
     Mcp,
@@ -200,6 +204,41 @@ fn run(command: Command) -> Result<(), String> {
                 );
             }
             println!("Playlist:    {} clips", summary.playlist_items);
+            Ok(())
+        }
+        Command::Eval { project, rebuild } => {
+            let result = eval::evaluate(&project, &rebuild)?;
+            println!(
+                "Tempo:       {} bpm found, {} bpm real",
+                result.tempo_found, result.tempo_truth
+            );
+            println!("             real   found  matched  precision  recall     f");
+            let mut rows = result.drums.clone();
+            rows.push(result.bass.clone());
+            for s in &rows {
+                println!(
+                    "{:<10} {:>6}  {:>6}  {:>7}  {:>9.2}  {:>6.2}  {:>4.2}",
+                    s.name, s.truth, s.found, s.matched, s.precision, s.recall, s.f
+                );
+            }
+            println!(
+                "Bass:        compared with \"{}\", found {} octaves off",
+                result.bass_channel, result.bass_octave_shift
+            );
+            println!("Harmony:     {:.2} similarity per bar", result.harmony);
+            match result.patterns_found {
+                Some(n) => println!(
+                    "Patterns:    {} used, the real project uses {}",
+                    n, result.patterns_truth
+                ),
+                None => println!(
+                    "Patterns:    no .flp in the rebuild, the real project uses {}",
+                    result.patterns_truth
+                ),
+            }
+            for note in &result.notes {
+                println!("Note:        {}", note);
+            }
             Ok(())
         }
         Command::Mcp => mcp::serve(),

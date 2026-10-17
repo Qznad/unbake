@@ -1,4 +1,5 @@
 use crate::music::{Note, PPQ};
+use std::collections::HashMap;
 use std::path::Path;
 
 pub struct Track {
@@ -10,6 +11,10 @@ pub struct Track {
 pub struct Marker {
     pub tick: u32,
     pub name: String,
+}
+
+pub struct ReadTrack {
+    pub notes: Vec<(u32, u32, u8)>,
 }
 
 struct Event {
@@ -123,6 +128,93 @@ fn push_varlen(out: &mut Vec<u8>, value: u32) {
     out.extend(groups);
 }
 
+// reads the notes (start, length, key) of every track in a midi file, with its ticks per beat
+pub fn read(path: &Path) -> Result<(u16, Vec<ReadTrack>), String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("can't read {}: {}", path.display(), e))?;
+    if bytes.len() < 14 || &bytes[0..4] != b"MThd" {
+        return Err(format!("{} is not a midi file", path.display()));
+    }
+    let ppq = u16::from_be_bytes([bytes[12], bytes[13]]);
+    let mut pos = 8 + u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as usize;
+
+    let mut tracks = Vec::new();
+    while pos + 8 <= bytes.len() {
+        let length = u32::from_be_bytes([
+            bytes[pos + 4],
+            bytes[pos + 5],
+            bytes[pos + 6],
+            bytes[pos + 7],
+        ]) as usize;
+        let end = (pos + 8 + length).min(bytes.len());
+        if &bytes[pos..pos + 4] == b"MTrk" {
+            tracks.push(read_track(&bytes[pos + 8..end]));
+        }
+        pos = end;
+    }
+    Ok((ppq, tracks))
+}
+
+// the notes of one track chunk, pairing each note on with its note off
+fn read_track(body: &[u8]) -> ReadTrack {
+    let mut notes = Vec::new();
+    let mut held: HashMap<u8, u32> = HashMap::new();
+    let mut tick = 0u32;
+    let mut status = 0u8;
+    let mut i = 0;
+
+    while i < body.len() {
+        tick += read_varlen(body, &mut i);
+        if i >= body.len() {
+            break;
+        }
+        if body[i] & 0x80 != 0 {
+            status = body[i];
+            i += 1;
+        }
+        match status {
+            0xFF => {
+                i += 1;
+                let length = read_varlen(body, &mut i) as usize;
+                i = (i + length).min(body.len());
+            }
+            0xF0 | 0xF7 => {
+                let length = read_varlen(body, &mut i) as usize;
+                i += length;
+            }
+            s if s & 0xF0 == 0x80 || s & 0xF0 == 0x90 => {
+                if i + 1 >= body.len() {
+                    break;
+                }
+                let (key, velocity) = (body[i], body[i + 1]);
+                i += 2;
+                if s & 0xF0 == 0x90 && velocity > 0 {
+                    held.insert(key, tick);
+                } else if let Some(start) = held.remove(&key) {
+                    notes.push((start, tick - start, key));
+                }
+            }
+            s if s & 0xF0 == 0xC0 || s & 0xF0 == 0xD0 => i += 1,
+            _ => i += 2,
+        }
+    }
+    notes.sort();
+    ReadTrack { notes }
+}
+
+// reads a number stored in groups of 7 bits, biggest first
+fn read_varlen(bytes: &[u8], i: &mut usize) -> u32 {
+    let mut value = 0u32;
+    while *i < bytes.len() {
+        let byte = bytes[*i];
+        *i += 1;
+        value = (value << 7) | (byte & 0x7F) as u32;
+        if byte < 0x80 {
+            break;
+        }
+    }
+    value
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,7 +236,7 @@ mod tests {
         }
     }
 
-    // a file with one note has the header, the tempo track and a note track
+    // a file with one note has the header, the tempo track and a note track, and reads back the same
     #[test]
     fn one_note_file() {
         let track = Track {
@@ -165,6 +257,11 @@ mod tests {
         let text = String::from_utf8_lossy(&bytes);
         assert_eq!(text.matches("MTrk").count(), 2);
         assert!(bytes.windows(3).any(|w| w == [0x90, 45, 100]));
+        let path = std::env::temp_dir().join("unbake_midi_test.mid");
+        std::fs::write(&path, &bytes).unwrap();
+        let (ppq, tracks) = read(&path).unwrap();
+        assert_eq!(ppq, 96);
+        assert_eq!(tracks[1].notes, vec![(0, 96, 45)]);
         assert!(bytes.windows(4).any(|w| w == [0x60, 0x80, 45, 0]));
     }
 }
