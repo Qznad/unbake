@@ -5,21 +5,6 @@ pub fn samples_to_seconds(samples: u32, sample_rate: u32) -> f64 {
     samples as f64 / sample_rate as f64
 }
 
-// converts seconds to a number of samples
-pub fn seconds_to_samples(seconds: f64, sample_rate: u32) -> u32 {
-    (seconds * sample_rate as f64).round() as u32
-}
-
-// how long one beat lasts in milliseconds
-pub fn bpm_to_ms_per_beat(bpm: f64) -> f64 {
-    60_000.0 / bpm
-}
-
-// how long one step lasts in milliseconds, a step is a quarter of a beat
-pub fn ms_per_step(bpm: f64) -> f64 {
-    bpm_to_ms_per_beat(bpm) / 4.0
-}
-
 // finds the loudest sample, ignoring the sign
 pub fn peak(samples: &[i16]) -> i32 {
     samples.iter().map(|&s| (s as i32).abs()).max().unwrap_or(0)
@@ -47,21 +32,69 @@ pub fn to_mono(samples: &[i16], channels: u16) -> Vec<f32> {
     mono
 }
 
-// changes the volume, 0.5 is half and 2.0 is double
-pub fn apply_gain(samples: &[i16], gain: f32) -> Vec<i16> {
-    let mut out = Vec::with_capacity(samples.len());
-    for &s in samples {
-        let scaled = (s as f32 * gain).round();
-        out.push(scaled.clamp(-32768.0, 32767.0) as i16);
-    }
-    out
+// converts decibels to a volume multiplier
+pub fn db_to_gain(db: f64) -> f64 {
+    10f64.powf(db / 20.0)
 }
 
-// converts samples to floats between -1 and 1
-pub fn to_float(samples: &[i16]) -> Vec<f32> {
-    let mut float_samples = Vec::new();
-    for &n in samples {
-        float_samples.push(n as f32 / 32768.0);
+// the average of a list of numbers
+pub fn mean(values: &[f32]) -> f32 {
+    if values.is_empty() {
+        return 0.0;
     }
-    float_samples
+    values.iter().sum::<f32>() / values.len() as f32
+}
+
+// the value below which a given fraction of the numbers fall, 0.5 is the median
+pub fn percentile(values: &[f32], fraction: f32) -> f32 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.total_cmp(b));
+    let index = ((sorted.len() - 1) as f32 * fraction).round() as usize;
+    sorted[index]
+}
+
+// how similar two lists are in direction, 1 is identical and 0 is unrelated
+pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
+    let mut dot = 0.0;
+    let mut norm_a = 0.0;
+    let mut norm_b = 0.0;
+    for i in 0..a.len().min(b.len()) {
+        dot += a[i] * b[i];
+        norm_a += a[i] * a[i];
+        norm_b += b[i] * b[i];
+    }
+    if norm_a == 0.0 || norm_b == 0.0 {
+        return 0.0;
+    }
+    dot / (norm_a.sqrt() * norm_b.sqrt())
+}
+
+// how well two lists rise and fall together, from -1 to 1
+pub fn correlation(a: &[f32], b: &[f32]) -> f32 {
+    let n = a.len().min(b.len());
+    if n == 0 {
+        return 0.0;
+    }
+    let mean_a = mean(&a[..n]);
+    let mean_b = mean(&b[..n]);
+    let mut centered_a = Vec::with_capacity(n);
+    let mut centered_b = Vec::with_capacity(n);
+    for i in 0..n {
+        centered_a.push(a[i] - mean_a);
+        centered_b.push(b[i] - mean_b);
+    }
+    cosine(&centered_a, &centered_b)
+}
+
+// the frequency in hz of a midi note, 69 is the a at 440 hz
+pub fn midi_to_hz(key: f32) -> f32 {
+    440.0 * 2f32.powf((key - 69.0) / 12.0)
+}
+
+// the midi note of a frequency, with decimals for notes in between
+pub fn hz_to_midi(hz: f32) -> f32 {
+    69.0 + 12.0 * (hz / 440.0).log2()
 }

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 #[derive(Debug, Clone)]
 pub struct WavInfo {
     pub sample_rate: u32,
@@ -51,8 +53,9 @@ impl Wav {
 }
 
 // saves a wav file to disk
-pub fn write_wav(path: &str, wav: &Wav) -> Result<(), String> {
-    std::fs::write(path, wav.to_bytes()).map_err(|e| format!("can't write {}: {}", path, e))
+pub fn write_wav(path: &Path, wav: &Wav) -> Result<(), String> {
+    std::fs::write(path, wav.to_bytes())
+        .map_err(|e| format!("can't write {}: {}", path.display(), e))
 }
 
 // reads 4 bytes at offset as a little endian u32
@@ -85,8 +88,8 @@ pub fn read_u16_le(bytes: &[u8], offset: usize) -> Result<u16, String> {
 }
 
 // loads a wav file from disk
-pub fn read_wav(path: &str) -> Result<Wav, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("can't read {}: {}", path, e))?;
+pub fn read_wav(path: &Path) -> Result<Wav, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("can't read {}: {}", path.display(), e))?;
     parse_wav(&bytes)
 }
 
@@ -111,7 +114,10 @@ pub fn parse_wav(bytes: &[u8]) -> Result<Wav, String> {
             if size < 16 {
                 return Err(format!("fmt chunk is too short ({} bytes)", size));
             }
-            let format = read_u16_le(bytes, content)?;
+            let mut format = read_u16_le(bytes, content)?;
+            if format == 0xFFFE && size >= 26 {
+                format = read_u16_le(bytes, content + 24)?;
+            }
             if format != 1 {
                 return Err(format!(
                     "unsupported format {} (only PCM is supported)",
@@ -165,4 +171,35 @@ pub fn parse_wav(bytes: &[u8]) -> Result<Wav, String> {
         },
         samples,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // writing a wav and parsing the bytes back gives the same header and samples
+    #[test]
+    fn round_trip() {
+        let wav = Wav {
+            info: WavInfo {
+                sample_rate: 44100,
+                channels: 2,
+                bits_per_sample: 16,
+                num_frames: 3,
+            },
+            samples: vec![0, -1, 32767, -32768, 1200, -1200],
+        };
+        let back = parse_wav(&wav.to_bytes()).unwrap();
+        assert_eq!(back.info.sample_rate, 44100);
+        assert_eq!(back.info.channels, 2);
+        assert_eq!(back.info.num_frames, 3);
+        assert_eq!(back.samples, wav.samples);
+    }
+
+    // files that are not wavs give an error instead of a crash
+    #[test]
+    fn rejects_other_files() {
+        assert!(parse_wav(b"hello").is_err());
+        assert!(parse_wav(b"RIFF\0\0\0\0WAVEjunk").is_err());
+    }
 }
