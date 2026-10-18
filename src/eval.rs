@@ -45,6 +45,7 @@ pub fn evaluate(project_path: &Path, rebuild_dir: &Path) -> Result<Evaluation, S
     let tempo_truth = summary.tempo.unwrap_or(120.0);
     let truth_tick = 60.0 / tempo_truth / project.ppq as f64;
     let truth_notes = timeline::timeline(&project);
+    let clips = timeline::audio_clips(&project);
 
     let report_path = rebuild_dir.join("report.json");
     let report_text = std::fs::read_to_string(&report_path)
@@ -82,11 +83,23 @@ pub fn evaluate(project_path: &Path, rebuild_dir: &Path) -> Result<Evaluation, S
         ("snare", &["snare", "clap"][..], 38),
         ("hat", &["hat", "hh"][..], 42),
     ] {
-        let truth: Vec<Timed> = truth_notes
+        let mut truth: Vec<Timed> = truth_notes
             .iter()
             .filter(|n| has_word(&channel_name(&summary, n.channel), words))
             .map(|n| to_timed(n, truth_tick))
             .collect();
+        for clip in &clips {
+            if clip.length <= 4 * project.ppq as u32
+                && has_word(&channel_name(&summary, clip.channel), words)
+            {
+                truth.push(Timed {
+                    time: clip.start as f64 * truth_tick,
+                    length: clip.length as f64 * truth_tick,
+                    key: 0,
+                });
+            }
+        }
+        truth.sort_by(|a, b| a.time.total_cmp(&b.time));
         let found: Vec<Timed> = our_drums
             .iter()
             .filter(|n| n.key == key)
@@ -109,12 +122,9 @@ pub fn evaluate(project_path: &Path, rebuild_dir: &Path) -> Result<Evaluation, S
     let bass = score("bass", &truth_bass, &our_bass, true);
     let bass_octave_shift = octave_shift(&truth_bass, &our_bass);
 
-    let truth_harmony: Vec<Timed> = melodic
-        .iter()
-        .filter(|n| Some(n.channel) != bass_channel)
-        .map(|n| to_timed(n, truth_tick))
-        .collect();
-    let mut our_harmony = ours("melody.mid")?;
+    let truth_harmony: Vec<Timed> = melodic.iter().map(|n| to_timed(n, truth_tick)).collect();
+    let mut our_harmony = ours("bass.mid")?;
+    our_harmony.extend(ours("melody.mid")?);
     our_harmony.extend(ours("chords.mid")?);
     let harmony = harmony_similarity(&truth_harmony, &our_harmony, 240.0 / tempo_truth);
 
@@ -141,9 +151,10 @@ pub fn evaluate(project_path: &Path, rebuild_dir: &Path) -> Result<Evaluation, S
         notes: vec![
             "hits and notes count as matched within 50 ms".to_string(),
             "bass notes also need the same note name, in any octave".to_string(),
-            "audio clips like sampled breaks are not notes in the project, so they show up as extra hits"
+            "clips up to a bar long on drum channels count as hits, sampled breaks are not counted"
                 .to_string(),
-            "harmony compares which notes sound in each bar, from 0 to 1".to_string(),
+            "harmony compares which notes sound in each bar across all melodic parts, from 0 to 1"
+                .to_string(),
         ],
     })
 }
@@ -183,7 +194,7 @@ fn is_drum(name: &str) -> bool {
     )
 }
 
-// the bass channel, one named bass with notes, otherwise the lowest one that mostly plays one note at a time
+// the bass channel, one named bass with notes, otherwise the lowest single note line below a flat 3, if any
 fn pick_bass(summary: &info::Summary, melodic: &[&TimedNote]) -> Option<u16> {
     let mut channels: Vec<u16> = melodic.iter().map(|n| n.channel).collect();
     channels.sort();
@@ -212,6 +223,9 @@ fn pick_bass(summary: &info::Summary, melodic: &[&TimedNote]) -> Option<u16> {
         }
         let keys: Vec<f32> = notes.iter().map(|n| n.key as f32).collect();
         let median = math::percentile(&keys, 0.5);
+        if median > 56.0 {
+            continue;
+        }
         if best.is_none_or(|(_, m)| median < m) {
             best = Some((c, median));
         }

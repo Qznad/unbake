@@ -5,6 +5,13 @@ use std::collections::HashMap;
 const PATTERN_BASE: u16 = 20480;
 
 #[derive(Clone, Copy, Debug)]
+pub struct AudioClip {
+    pub channel: u16,
+    pub start: u32,
+    pub length: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct TimedNote {
     pub channel: u16,
     pub start: u32,
@@ -75,6 +82,29 @@ fn pattern_notes(project: &Project) -> HashMap<u16, Vec<TimedNote>> {
         }
     }
     patterns
+}
+
+// every audio or automation clip in the playlist, with the channel it plays
+pub fn audio_clips(project: &Project) -> Vec<AudioClip> {
+    let size = info::playlist_item_size(project);
+    let mut out = Vec::new();
+    for event in &project.events {
+        if let (events::PLAYLIST, Value::Data(data)) = (event.id, &event.value) {
+            for item in data.chunks_exact(size) {
+                let index = u16::from_le_bytes([item[6], item[7]]);
+                if index < PATTERN_BASE {
+                    out.push(AudioClip {
+                        channel: index,
+                        start: u32::from_le_bytes([item[0], item[1], item[2], item[3]]),
+                        length: u32::from_le_bytes([item[8], item[9], item[10], item[11]]),
+                    });
+                }
+            }
+            break;
+        }
+    }
+    out.sort_by_key(|c| c.start);
+    out
 }
 
 // how many different patterns the playlist actually uses
