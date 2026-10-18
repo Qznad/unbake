@@ -264,7 +264,7 @@ fn set_up_channels(
 
         if let Some(block) = find_channel(&available, part) {
             if let (Some(sound), true) = (sound, block.kind == SAMPLER) {
-                let name = extras.reuse_audio_channels.then(|| display_name(part));
+                let name = extras.reuse_audio_channels.then(|| part.channel_name());
                 channels::set_channel(project, block.id, name, &sound.path, sound.root);
             }
             claimed.push(block.id);
@@ -279,7 +279,7 @@ fn set_up_channels(
                     project,
                     model,
                     next,
-                    display_name(part),
+                    part.channel_name(),
                     &sound.path,
                     sound.root,
                 ));
@@ -300,18 +300,6 @@ fn set_up_channels(
     ChannelSetup {
         parts,
         stems: stem_channels,
-    }
-}
-
-// the channel name we give a part
-fn display_name(part: Part) -> &'static str {
-    match part {
-        Part::Kick => "Kick",
-        Part::Snare => "Snare",
-        Part::Hat => "Hat",
-        Part::Bass => "Bass",
-        Part::Melody => "Lead",
-        Part::Chords => "Pad",
     }
 }
 

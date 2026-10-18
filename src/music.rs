@@ -32,6 +32,18 @@ impl Part {
         }
     }
 
+    // the name of the part's fl studio channel and of its sound file
+    pub fn channel_name(&self) -> &'static str {
+        match self {
+            Part::Kick => "Kick",
+            Part::Snare => "Snare",
+            Part::Hat => "Hat",
+            Part::Bass => "Bass",
+            Part::Melody => "Lead",
+            Part::Chords => "Pad",
+        }
+    }
+
     // true for the parts that come from the drum stem
     pub fn is_drum(&self) -> bool {
         matches!(self, Part::Kick | Part::Snare | Part::Hat)

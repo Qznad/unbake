@@ -3,7 +3,7 @@ use crate::flp::timeline::{self, TimedNote};
 use crate::flp::{events, info};
 use crate::midi;
 use serde::Serialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const TOLERANCE: f64 = 0.05;
 
@@ -128,13 +128,9 @@ pub fn evaluate(project_path: &Path, rebuild_dir: &Path) -> Result<Evaluation, S
     our_harmony.extend(ours("chords.mid")?);
     let harmony = harmony_similarity(&truth_harmony, &our_harmony, 240.0 / tempo_truth);
 
-    let patterns_found = std::fs::read_dir(rebuild_dir).ok().and_then(|entries| {
-        entries
-            .flatten()
-            .find(|e| e.path().extension().is_some_and(|x| x == "flp"))
-            .and_then(|e| events::read(&e.path()).ok())
-            .map(|p| timeline::patterns_used(&p))
-    });
+    let patterns_found = find_flp(rebuild_dir)
+        .and_then(|path| events::read(&path).ok())
+        .map(|p| timeline::patterns_used(&p));
 
     Ok(Evaluation {
         tempo_truth,
@@ -157,6 +153,27 @@ pub fn evaluate(project_path: &Path, rebuild_dir: &Path) -> Result<Evaluation, S
                 .to_string(),
         ],
     })
+}
+
+// the rebuild's fl studio project, in the folder itself or in the song folder inside it
+fn find_flp(dir: &Path) -> Option<PathBuf> {
+    let mut folders = vec![dir.to_path_buf()];
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        if entry.path().is_dir() {
+            folders.push(entry.path());
+        }
+    }
+    for folder in folders {
+        let Ok(entries) = std::fs::read_dir(&folder) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            if entry.path().extension().is_some_and(|x| x == "flp") {
+                return Some(entry.path());
+            }
+        }
+    }
+    None
 }
 
 // a project note converted to seconds

@@ -28,7 +28,7 @@ pub struct SoundFile {
 #[allow(clippy::too_many_arguments)]
 pub fn prepare(
     user_dir: Option<&Path>,
-    samples_dir: &Path,
+    dir: &Path,
     drums: &Signal,
     bass: &Signal,
     hits: &[Hit],
@@ -36,15 +36,14 @@ pub fn prepare(
     grid: &Grid,
     voices: &Voices,
 ) -> Result<Vec<SoundFile>, String> {
-    std::fs::create_dir_all(samples_dir)
-        .map_err(|e| format!("can't create {}: {}", samples_dir.display(), e))?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("can't create {}: {}", dir.display(), e))?;
     let mut out = Vec::new();
 
     for part in PARTS {
         let user_file = user_dir.and_then(|dir| find_user_file(dir, part));
         let (sound, root, source) = match user_file {
             Some(path) => {
-                let (sound, root) = user_sound(&path, part, samples_dir)?;
+                let (sound, root) = user_sound(&path, part)?;
                 (sound, root, "your sound".to_string())
             }
             None if part.is_drum() => match cut_drum(drums, hits, part) {
@@ -58,8 +57,8 @@ pub fn prepare(
             None => synth_sound(part, voices, drums.sample_rate),
         };
 
-        let file = format!("{}.wav", part.name());
-        wav::write_wav(&samples_dir.join(&file), &sound.normalized().to_wav())?;
+        let file = format!("{}.wav", part.channel_name());
+        wav::write_wav(&dir.join(&file), &sound.normalized().to_wav())?;
         out.push(SoundFile {
             part,
             file,
@@ -73,13 +72,12 @@ pub fn prepare(
 // the sound of a drum, the user's own when given, otherwise the cleanest hit cut from the stem
 pub fn drum_sound(
     user_dir: Option<&Path>,
-    samples_dir: &Path,
     stem: &Signal,
     hits: &[Hit],
     part: Part,
 ) -> Option<Signal> {
     if let Some(path) = user_dir.and_then(|dir| find_user_file(dir, part)) {
-        if let Ok((sound, _)) = user_sound(&path, part, samples_dir) {
+        if let Ok((sound, _)) = user_sound(&path, part) {
             return Some(sound);
         }
     }
@@ -105,8 +103,9 @@ fn find_user_file(dir: &Path, part: Part) -> Option<PathBuf> {
 }
 
 // loads a sound the user gave, trims the silence in front and finds the note it plays
-fn user_sound(path: &Path, part: Part, samples_dir: &Path) -> Result<(Signal, u8), String> {
-    let wav = convert::load(path, &samples_dir.join("converted"))?;
+fn user_sound(path: &Path, part: Part) -> Result<(Signal, u8), String> {
+    let work_dir = std::env::temp_dir().join("unbake").join(part.name());
+    let wav = convert::load(path, &work_dir)?;
     let sound = Signal::from_wav(&wav).trim_start();
     if part.is_drum() {
         return Ok((sound, ROOT));

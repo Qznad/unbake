@@ -70,7 +70,14 @@ pub fn analyze_song(file: &Path) -> Result<SongInfo, String> {
 pub fn run(options: &Options) -> Result<Report, String> {
     let out = output_dir(options);
     let stems_dir = out.join("stems");
-    for dir in [&out, &stems_dir, &out.join("midi"), &out.join("render")] {
+    let fl_dir = out.join(song_name(options));
+    for dir in [
+        &out,
+        &stems_dir,
+        &fl_dir,
+        &out.join("midi"),
+        &out.join("render"),
+    ] {
         create_dir(dir)?;
     }
 
@@ -122,14 +129,8 @@ pub fn run(options: &Options) -> Result<Report, String> {
     progress("transcribing drums, bass, melody and chords at the same time");
     let ((drum_hits, drum_notes), bass_notes, melody_notes, chord_spans) =
         std::thread::scope(|scope| {
-            let drums = scope.spawn(|| {
-                transcribe_drums(
-                    &stems.drums,
-                    &grid,
-                    options.sounds.as_deref(),
-                    &out.join("samples"),
-                )
-            });
+            let drums =
+                scope.spawn(|| transcribe_drums(&stems.drums, &grid, options.sounds.as_deref()));
             let bass = scope.spawn(|| transcribe(&stems.bass, &grid, Part::Bass, 30.0, 400.0, 0.6));
             let melody = scope.spawn(|| transcribe_melody(&stems.other, &grid));
             let chords = scope.spawn(|| transcribe_chords(&stems.other, &stems.bass, &grid, bars));
@@ -227,7 +228,7 @@ pub fn run(options: &Options) -> Result<Report, String> {
     progress("preparing a sound for every part");
     let sounds = sounds::prepare(
         options.sounds.as_deref(),
-        &out.join("samples"),
+        &fl_dir,
         &stems.drums,
         &stems.bass,
         &drum_hits,
@@ -240,7 +241,8 @@ pub fn run(options: &Options) -> Result<Report, String> {
     let track_names: Vec<String> = lanes.iter().map(|l| l.name.clone()).collect();
     let flp_status = write_flp(
         options,
-        &out,
+        &stems_dir,
+        &fl_dir,
         &arrangement,
         &track_names,
         &grid,
@@ -319,8 +321,6 @@ pub fn run(options: &Options) -> Result<Report, String> {
             "vocals are left as audio".to_string(),
             "the rebuild preview uses a small built in synth, not your FL Studio sounds"
                 .to_string(),
-            "the .flp writer follows the FL Studio 20.8 file layout and was not opened in FL Studio here"
-                .to_string(),
         ],
     };
     report::write_json(&report, &out.join("report.json"))?;
@@ -330,18 +330,13 @@ pub fn run(options: &Options) -> Result<Report, String> {
 }
 
 // finds the drum hits in two passes, first by frequency bands, then by matching each drum's own sound
-fn transcribe_drums(
-    stem: &Signal,
-    grid: &Grid,
-    user_dir: Option<&Path>,
-    samples_dir: &Path,
-) -> (Vec<Hit>, Vec<Note>) {
+fn transcribe_drums(stem: &Signal, grid: &Grid, user_dir: Option<&Path>) -> (Vec<Hit>, Vec<Note>) {
     let spec = Spectrogram::standard(&stem.normalized());
     let first = drums::detect(&spec);
 
     let mut templates = Vec::new();
     for part in [Part::Kick, Part::Snare, Part::Hat] {
-        if let Some(sound) = sounds::drum_sound(user_dir, samples_dir, stem, &first, part) {
+        if let Some(sound) = sounds::drum_sound(user_dir, stem, &first, part) {
             templates.push((part, drums::template(&sound)));
         }
     }
@@ -401,11 +396,12 @@ fn transcribe_chords(other: &Signal, bass: &Signal, grid: &Grid, bars: u32) -> V
     chords::detect(&upper, &low, frame_rate, grid, bars)
 }
 
-// writes the fl studio project from the built in template or the user's own, with sounds and stems
+// writes the fl studio project into its own folder with every sound and stem it plays next to it
 #[allow(clippy::too_many_arguments)]
 fn write_flp(
     options: &Options,
-    out: &Path,
+    stems_dir: &Path,
+    fl_dir: &Path,
     arrangement: &Arrangement,
     track_names: &[String],
     grid: &Grid,
@@ -428,20 +424,25 @@ fn write_flp(
     } else {
         (0, 0)
     };
-    let stems = ["drums", "bass", "other", "vocals"]
-        .iter()
-        .map(|name| Stem {
-            name: format!("{} stem", capitalize(name)),
-            path: format!("{}\\stems\\{}.wav", folder, name),
+    let mut stems = Vec::new();
+    for name in ["drums", "bass", "other", "vocals"] {
+        let stem_name = format!("{} stem", capitalize(name));
+        link_or_copy(
+            &stems_dir.join(format!("{}.wav", name)),
+            &fl_dir.join(format!("{}.wav", stem_name)),
+        )?;
+        stems.push(Stem {
+            path: format!("{}\\{}.wav", folder, stem_name),
+            name: stem_name,
             seconds,
-        })
-        .collect();
+        });
+    }
     let extras = Extras {
         sounds: sounds
             .iter()
             .map(|s| Sound {
                 part: s.part,
-                path: format!("{}\\samples\\{}", folder, s.file),
+                path: format!("{}\\{}", folder, s.file),
                 root: s.root,
             })
             .collect(),
@@ -461,19 +462,32 @@ fn write_flp(
         &extras,
     )?;
     warnings.extend(built.warnings);
-    let file = format!("{}.flp", song_name(options));
-    flp::events::write(&out.join(&file), &built.project)?;
+    let song = song_name(options);
+    flp::events::write(&fl_dir.join(format!("{}.flp", song)), &built.project)?;
     Ok(format!(
-        "{} with {} patterns, {} clips and {} markers, copy this folder to {} on windows",
-        file,
+        "{}/{}.flp with {} patterns, {} clips and {} markers, copy the whole {} folder to {} on windows",
+        song,
+        song,
         built.patterns,
         built.clips,
         markers.len(),
+        song,
         folder
     ))
 }
 
-// the windows folder the rebuild should be copied to so fl studio finds the samples and stems
+// puts a file at a second place without using more disk space, copying it when that isn't possible
+fn link_or_copy(from: &Path, to: &Path) -> Result<(), String> {
+    let _ = std::fs::remove_file(to);
+    if std::fs::hard_link(from, to).is_ok() {
+        return Ok(());
+    }
+    std::fs::copy(from, to)
+        .map(|_| ())
+        .map_err(|e| format!("can't copy {} to {}: {}", from.display(), to.display(), e))
+}
+
+// where the song folder will sit on windows, fl studio looks for its sounds there first
 pub fn fl_folder(options: &Options) -> String {
     match &options.fl_folder {
         Some(folder) => folder.trim_end_matches('\\').to_string(),
@@ -603,11 +617,19 @@ pub fn load_stems(dir: &Path) -> Result<Stems, String> {
     })
 }
 
-// the files in the output folder, as paths relative to it
+// the files in the output folder and its folders, as paths relative to it
 fn written_files(out: &Path) -> Vec<String> {
+    let mut dirs = vec![String::new()];
+    if let Ok(entries) = std::fs::read_dir(out) {
+        for entry in entries.flatten() {
+            if entry.path().is_dir() {
+                dirs.push(entry.file_name().to_string_lossy().to_string());
+            }
+        }
+    }
     let mut files = Vec::new();
-    for dir in ["", "stems", "midi", "render"] {
-        let Ok(entries) = std::fs::read_dir(out.join(dir)) else {
+    for dir in dirs {
+        let Ok(entries) = std::fs::read_dir(out.join(&dir)) else {
             continue;
         };
         for entry in entries.flatten() {
