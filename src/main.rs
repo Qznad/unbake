@@ -17,6 +17,7 @@ mod music;
 mod rebuild;
 mod report;
 mod separate;
+mod sounds;
 mod synth;
 
 use audio::wav::Wav;
@@ -67,6 +68,16 @@ enum Command {
             help = "an FL Studio project with channels named Kick, Snare, Hat, Bass, Lead and Pad"
         )]
         template: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "a folder with your own sounds: kick, snare, hat, bass, lead, pad (.wav, .mp3, ...)"
+        )]
+        sounds: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "the windows folder you will copy the rebuild to [default: %FLStudioUserData%\\Projects\\unbake\\<song>]"
+        )]
+        fl_folder: Option<String>,
         #[arg(long, help = "skip tuning the synth sounds to the stems, faster")]
         no_match: bool,
     },
@@ -116,6 +127,8 @@ fn run(command: Command) -> Result<(), String> {
                     out: None,
                     stems: None,
                     template: None,
+                    sounds: None,
+                    fl_folder: None,
                     match_sounds: false,
                 })
                 .join("stems")
@@ -129,6 +142,8 @@ fn run(command: Command) -> Result<(), String> {
             out,
             stems,
             template,
+            sounds,
+            fl_folder,
             no_match,
         } => {
             let options = rebuild::Options {
@@ -136,6 +151,8 @@ fn run(command: Command) -> Result<(), String> {
                 out,
                 stems,
                 template,
+                sounds,
+                fl_folder,
                 match_sounds: !no_match,
             };
             let report = rebuild::run(&options)?;
@@ -171,6 +188,9 @@ fn run(command: Command) -> Result<(), String> {
                     "Sounds:      {} stem similarity {:.2} -> {:.2} after {} renders",
                     m.stem, m.score_before, m.score_after, m.renders
                 );
+            }
+            for sound in &report.sounds {
+                println!("Sound:       {}", sound);
             }
             println!("FL project:  {}", report.flp);
             for warning in &report.warnings {

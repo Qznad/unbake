@@ -8,3 +8,4 @@ separated/
 docs/
 *.flp
 test_audio/
+!assets/*.flp

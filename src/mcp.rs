@@ -89,7 +89,9 @@ fn tools() -> Value {
                     "file": file,
                     "out": { "type": "string", "description": "output folder" },
                     "stems": { "type": "string", "description": "folder with stems to use instead of running demucs" },
-                    "template": { "type": "string", "description": "FL Studio project with channels named Kick, Snare, Hat, Bass, Lead and Pad" },
+                    "template": { "type": "string", "description": "your own FL Studio template, parts go to channels named Kick, Snare, Hat, Bass, Lead and Pad; leave out to use the built in one" },
+                    "sounds": { "type": "string", "description": "folder with the user's own sounds named kick, snare, hat, bass, lead, pad" },
+                    "fl_folder": { "type": "string", "description": "windows folder the rebuild will be copied to" },
                     "match_sounds": { "type": "boolean", "description": "tune the synth sounds to the stems, default true" }
                 },
                 "required": ["file"]
@@ -140,6 +142,8 @@ fn split(args: &Value) -> Result<Value, String> {
         out: None,
         stems: None,
         template: None,
+        sounds: None,
+        fl_folder: None,
         match_sounds: false,
     };
     let dir =
@@ -155,6 +159,8 @@ fn rebuild_tool(args: &Value) -> Result<Value, String> {
         out: optional_path(args, "out"),
         stems: optional_path(args, "stems"),
         template: optional_path(args, "template"),
+        sounds: optional_path(args, "sounds"),
+        fl_folder: args["fl_folder"].as_str().map(|s| s.to_string()),
         match_sounds: args["match_sounds"].as_bool().unwrap_or(true),
     };
     let report = rebuild::run(&options)?;

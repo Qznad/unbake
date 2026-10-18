@@ -101,6 +101,32 @@ impl Signal {
         }
     }
 
+    // a copy that starts just before the sound does, without the silence in front
+    pub fn trim_start(&self) -> Signal {
+        let threshold = 0.02 * self.peak();
+        let first = self
+            .samples
+            .iter()
+            .position(|s| s.abs() > threshold)
+            .unwrap_or(0);
+        let lead_in = (0.002 * self.sample_rate as f32) as usize;
+        Signal {
+            samples: self.samples[first.saturating_sub(lead_in)..].to_vec(),
+            sample_rate: self.sample_rate,
+        }
+    }
+
+    // a copy that fades smoothly to silence over its last few milliseconds so it doesn't click
+    pub fn fade_out(&self, seconds: f64) -> Signal {
+        let mut out = self.clone();
+        let length = ((seconds * self.sample_rate as f64) as usize).min(out.samples.len());
+        let start = out.samples.len() - length;
+        for i in 0..length {
+            out.samples[start + i] *= 1.0 - i as f32 / length as f32;
+        }
+        out
+    }
+
     // a lower sample rate copy, filtering out highs first so they don't fold back as noise
     pub fn downsample(&self, factor: usize) -> Signal {
         let taps = 63;

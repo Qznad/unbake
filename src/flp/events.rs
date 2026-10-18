@@ -1,15 +1,20 @@
 use crate::audio::wav::{read_u16_le, read_u32_le};
 use std::path::Path;
 
+pub const PING_PONG: u8 = 20;
+pub const CHANNEL_TYPE: u8 = 21;
 pub const CHANNEL_NEW: u8 = 64;
 pub const PATTERN_NEW: u8 = 65;
 pub const ARRANGEMENT_NEW: u8 = 99;
+pub const ROOT_NOTE: u8 = 135;
 pub const MARKER_POSITION: u8 = 148;
 pub const TEMPO: u8 = 156;
 pub const PATTERN_NAME: u8 = 193;
 pub const VERSION: u8 = 199;
 pub const CHANNEL_NAME: u8 = 203;
 pub const MARKER_NAME: u8 = 205;
+pub const SAMPLE_PATH: u8 = 196;
+pub const DATA_PATH: u8 = 202;
 pub const PATTERN_NOTES: u8 = 224;
 pub const PLAYLIST: u8 = 233;
 pub const TRACK_DATA: u8 = 238;

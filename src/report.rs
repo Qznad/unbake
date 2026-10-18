@@ -18,6 +18,7 @@ pub struct Report {
     pub chords: Vec<String>,
     pub parts: Vec<PartReport>,
     pub sound_matching: Vec<Matched>,
+    pub sounds: Vec<String>,
     pub voices: Voices,
     pub flp: String,
     pub warnings: Vec<String>,
@@ -124,7 +125,8 @@ pub fn write_html(report: &Report, path: &Path) -> Result<(), String> {
          <dt>Length</dt><dd>{:.1} s</dd><dt>FL project</dt><dd>{}</dd></dl>\n\
          <div class=\"ab\"><label>Original mix <audio controls preload=\"none\" src=\"stems/mix.wav\"></audio></label>\n\
          <label>Rebuild preview <audio controls preload=\"none\" src=\"render/mix.wav\"></audio></label></div>\n\
-         <h2>Sections</h2>\n<ul>{}</ul>\n<p>Chords: {}</p>\n{}\n<h2>Sound matching</h2>\n<ul>{}</ul>\n\
+         <h2>Sections</h2>\n<ul>{}</ul>\n<p>Chords: {}</p>\n{}\n<h2>Sounds in the FL project</h2>\n<ul>{}</ul>\n\
+         <h2>Sound matching</h2>\n<ul>{}</ul>\n\
          <h2>Warnings</h2>\n<ul>{}</ul>\n<h2>Limits</h2>\n<ul>{}</ul>\n\
          <p class=\"small\">Scores go from 0 to 1. Every score is measured on its own stem, never the full mix.</p>\n\
          </main>\n</body>\n</html>\n",
@@ -139,6 +141,7 @@ pub fn write_html(report: &Report, path: &Path) -> Result<(), String> {
         list(&sections),
         escape(&report.chords.join(" ")),
         parts,
+        list(&report.sounds),
         list(&matching),
         list(&report.warnings),
         list(&report.limitations)

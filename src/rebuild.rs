@@ -1,4 +1,5 @@
 use crate::analysis::chords::{self, ChordSpan};
+use crate::analysis::drums::Hit;
 use crate::analysis::sections;
 use crate::analysis::spectrum::{HARMONIC_FACTOR, HOP, Spectrogram};
 use crate::analysis::{chroma, drums, key, notes, onsets, pitch, tempo};
@@ -7,20 +8,26 @@ use crate::audio::signal::Signal;
 use crate::audio::{convert, loudness, math, wav};
 use crate::compare;
 use crate::flp;
+use crate::flp::build::{Extras, Sound, Stem};
 use crate::matching;
 use crate::midi::{self, Marker};
 use crate::music::{self, BAR, Grid, Note, Part};
 use crate::report::{self, PartReport, Report};
 use crate::separate;
+use crate::sounds::{self, SoundFile};
 use crate::synth::{self, Voices};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+
+const BUILT_IN_TEMPLATE: &[u8] = include_bytes!("../assets/template.flp");
 
 pub struct Options {
     pub input: PathBuf,
     pub out: Option<PathBuf>,
     pub stems: Option<PathBuf>,
     pub template: Option<PathBuf>,
+    pub sounds: Option<PathBuf>,
+    pub fl_folder: Option<String>,
     pub match_sounds: bool,
 }
 
@@ -113,18 +120,19 @@ pub fn run(options: &Options) -> Result<Report, String> {
         .collect();
 
     progress("transcribing drums, bass, melody and chords at the same time");
-    let (drum_notes, bass_notes, melody_notes, chord_spans) = std::thread::scope(|scope| {
-        let drums = scope.spawn(|| transcribe_drums(&stems.drums, &grid));
-        let bass = scope.spawn(|| transcribe(&stems.bass, &grid, Part::Bass, 30.0, 400.0, 0.6));
-        let melody = scope.spawn(|| transcribe_melody(&stems.other, &grid));
-        let chords = scope.spawn(|| transcribe_chords(&stems.other, &stems.bass, &grid, bars));
-        (
-            drums.join().expect("drum transcription crashed"),
-            bass.join().expect("bass transcription crashed"),
-            melody.join().expect("melody transcription crashed"),
-            chords.join().expect("chord detection crashed"),
-        )
-    });
+    let ((drum_hits, drum_notes), bass_notes, melody_notes, chord_spans) =
+        std::thread::scope(|scope| {
+            let drums = scope.spawn(|| transcribe_drums(&stems.drums, &grid));
+            let bass = scope.spawn(|| transcribe(&stems.bass, &grid, Part::Bass, 30.0, 400.0, 0.6));
+            let melody = scope.spawn(|| transcribe_melody(&stems.other, &grid));
+            let chords = scope.spawn(|| transcribe_chords(&stems.other, &stems.bass, &grid, bars));
+            (
+                drums.join().expect("drum transcription crashed"),
+                bass.join().expect("bass transcription crashed"),
+                melody.join().expect("melody transcription crashed"),
+                chords.join().expect("chord detection crashed"),
+            )
+        });
     let chord_notes = chords::to_notes(&chord_spans);
 
     progress("finding the loops each part repeats");
@@ -170,18 +178,6 @@ pub fn run(options: &Options) -> Result<Report, String> {
     }
     midi::write(&out.join("midi/song.mid"), grid.bpm, &tracks, &markers)?;
 
-    let mut warnings = Vec::new();
-    let track_names: Vec<String> = lanes.iter().map(|l| l.name.clone()).collect();
-    let flp_status = write_flp(
-        options,
-        &out,
-        &arrangement,
-        &track_names,
-        &grid,
-        &markers,
-        &mut warnings,
-    )?;
-
     let mut other_notes = melody_notes.clone();
     other_notes.extend_from_slice(&chord_notes);
     let mut voices = Voices::defaults();
@@ -220,6 +216,32 @@ pub fn run(options: &Options) -> Result<Report, String> {
         voices.chords = other_match.voices.chords;
         sound_matching = vec![bass_match, other_match];
     }
+
+    progress("preparing a sound for every part");
+    let sounds = sounds::prepare(
+        options.sounds.as_deref(),
+        &out.join("samples"),
+        &stems.drums,
+        &stems.bass,
+        &drum_hits,
+        &bass_notes,
+        &grid,
+        &voices,
+    )?;
+
+    let mut warnings = Vec::new();
+    let track_names: Vec<String> = lanes.iter().map(|l| l.name.clone()).collect();
+    let flp_status = write_flp(
+        options,
+        &out,
+        &arrangement,
+        &track_names,
+        &grid,
+        &markers,
+        &sounds,
+        mix.duration(),
+        &mut warnings,
+    )?;
 
     progress("rendering and comparing each part");
     let measured_on = format!("bars 1 to {}", bars);
@@ -273,6 +295,10 @@ pub fn run(options: &Options) -> Result<Report, String> {
         chords: chord_spans.iter().map(|c| c.chord.name()).collect(),
         parts: part_reports,
         sound_matching,
+        sounds: sounds
+            .iter()
+            .map(|s| format!("{}: {} ({})", s.part.name(), s.source, s.file))
+            .collect(),
         voices,
         flp: flp_status,
         warnings,
@@ -296,10 +322,12 @@ pub fn run(options: &Options) -> Result<Report, String> {
     Ok(report)
 }
 
-// finds the drum hits in the drum stem and snaps them to the grid
-fn transcribe_drums(stem: &Signal, grid: &Grid) -> Vec<Note> {
+// finds the drum hits in the drum stem, and the same hits snapped to the grid
+fn transcribe_drums(stem: &Signal, grid: &Grid) -> (Vec<Hit>, Vec<Note>) {
     let spec = Spectrogram::standard(&stem.normalized());
-    drums::to_notes(&drums::detect(&spec), grid)
+    let hits = drums::detect(&spec);
+    let notes = drums::to_notes(&hits, grid);
+    (hits, notes)
 }
 
 // follows the pitch of a stem and turns it into notes on the grid
@@ -351,7 +379,7 @@ fn transcribe_chords(other: &Signal, bass: &Signal, grid: &Grid, bars: u32) -> V
     chords::detect(&upper, &low, frame_rate, grid, bars)
 }
 
-// writes the fl studio project when a template was given, and says what happened
+// writes the fl studio project from the built in template or the user's own, with sounds and stems
 #[allow(clippy::too_many_arguments)]
 fn write_flp(
     options: &Options,
@@ -360,29 +388,78 @@ fn write_flp(
     track_names: &[String],
     grid: &Grid,
     markers: &[Marker],
+    sounds: &[SoundFile],
+    seconds: f64,
     warnings: &mut Vec<String>,
 ) -> Result<String, String> {
-    let Some(template_path) = &options.template else {
-        return Ok(
-            "not written, pass --template with an FL Studio project that has channels \
-                   named Kick, Snare, Hat, Bass, Lead and Pad"
-                .to_string(),
-        );
-    };
     progress("building the fl studio project");
-    let template = flp::events::read(template_path)?;
-    let built = flp::build::build(&template, arrangement, track_names, grid.bpm, markers)?;
-    warnings.extend(built.warnings);
+    let built_in = options.template.is_none();
+    let template = match &options.template {
+        Some(path) => flp::events::read(path)?,
+        None => flp::events::parse(BUILT_IN_TEMPLATE)?,
+    };
 
+    let folder = fl_folder(options);
+    let origin_ticks = (grid.origin / grid.tick_seconds()).round() as u32;
+    let (shift, stem_start) = if origin_ticks >= 2 {
+        (BAR, BAR - origin_ticks.min(BAR))
+    } else {
+        (0, 0)
+    };
+    let stems = ["drums", "bass", "other", "vocals"]
+        .iter()
+        .map(|name| Stem {
+            name: format!("{} stem", capitalize(name)),
+            path: format!("{}\\stems\\{}.wav", folder, name),
+            seconds,
+        })
+        .collect();
+    let extras = Extras {
+        sounds: sounds
+            .iter()
+            .map(|s| Sound {
+                part: s.part,
+                path: format!("{}\\samples\\{}", folder, s.file),
+                root: s.root,
+            })
+            .collect(),
+        stems,
+        data_folder: Some(folder.clone()),
+        reuse_audio_channels: built_in,
+        shift,
+        stem_start,
+    };
+
+    let built = flp::build::build(
+        &template,
+        arrangement,
+        track_names,
+        grid.bpm,
+        markers,
+        &extras,
+    )?;
+    warnings.extend(built.warnings);
     let file = format!("{}.flp", song_name(options));
     flp::events::write(&out.join(&file), &built.project)?;
     Ok(format!(
-        "{} with {} patterns, {} clips and {} markers",
+        "{} with {} patterns, {} clips and {} markers, copy this folder to {} on windows",
         file,
         built.patterns,
         built.clips,
-        markers.len()
+        markers.len(),
+        folder
     ))
+}
+
+// the windows folder the rebuild should be copied to so fl studio finds the samples and stems
+pub fn fl_folder(options: &Options) -> String {
+    match &options.fl_folder {
+        Some(folder) => folder.trim_end_matches('\\').to_string(),
+        None => format!(
+            "%FLStudioUserData%\\Projects\\unbake\\{}",
+            song_name(options)
+        ),
+    }
 }
 
 // renders a part, turns it to the loudness of its stem, saves it, adds it to the preview and scores it
