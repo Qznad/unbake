@@ -3,7 +3,7 @@ use crate::flp::timeline::{self, TimedNote};
 use crate::flp::{events, info};
 use crate::midi;
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const TOLERANCE: f64 = 0.05;
 
@@ -47,7 +47,7 @@ pub fn evaluate(project_path: &Path, rebuild_dir: &Path) -> Result<Evaluation, S
     let truth_notes = timeline::timeline(&project);
     let clips = timeline::audio_clips(&project);
 
-    let report_path = rebuild_dir.join("report.json");
+    let report_path = rebuild_dir.join("extras/report.json");
     let report_text = std::fs::read_to_string(&report_path)
         .map_err(|e| format!("can't read {}: {}", report_path.display(), e))?;
     let report: serde_json::Value =
@@ -55,7 +55,7 @@ pub fn evaluate(project_path: &Path, rebuild_dir: &Path) -> Result<Evaluation, S
     let tempo_found = report["tempo_bpm"].as_f64().unwrap_or(0.0);
     let origin = report["first_bar_seconds"].as_f64().unwrap_or(0.0);
 
-    let midi_dir = rebuild_dir.join("midi");
+    let midi_dir = rebuild_dir.join("extras/midi");
     let ours = |file: &str| -> Result<Vec<Timed>, String> {
         let path = midi_dir.join(file);
         if !path.exists() {
@@ -128,9 +128,13 @@ pub fn evaluate(project_path: &Path, rebuild_dir: &Path) -> Result<Evaluation, S
     our_harmony.extend(ours("chords.mid")?);
     let harmony = harmony_similarity(&truth_harmony, &our_harmony, 240.0 / tempo_truth);
 
-    let patterns_found = find_flp(rebuild_dir)
-        .and_then(|path| events::read(&path).ok())
-        .map(|p| timeline::patterns_used(&p));
+    let patterns_found = std::fs::read_dir(rebuild_dir).ok().and_then(|entries| {
+        entries
+            .flatten()
+            .find(|e| e.path().extension().is_some_and(|x| x == "flp"))
+            .and_then(|e| events::read(&e.path()).ok())
+            .map(|p| timeline::patterns_used(&p))
+    });
 
     Ok(Evaluation {
         tempo_truth,
@@ -153,27 +157,6 @@ pub fn evaluate(project_path: &Path, rebuild_dir: &Path) -> Result<Evaluation, S
                 .to_string(),
         ],
     })
-}
-
-// the rebuild's fl studio project, in the folder itself or in the song folder inside it
-fn find_flp(dir: &Path) -> Option<PathBuf> {
-    let mut folders = vec![dir.to_path_buf()];
-    for entry in std::fs::read_dir(dir).ok()?.flatten() {
-        if entry.path().is_dir() {
-            folders.push(entry.path());
-        }
-    }
-    for folder in folders {
-        let Ok(entries) = std::fs::read_dir(&folder) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            if entry.path().extension().is_some_and(|x| x == "flp") {
-                return Some(entry.path());
-            }
-        }
-    }
-    None
 }
 
 // a project note converted to seconds

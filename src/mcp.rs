@@ -146,8 +146,7 @@ fn split(args: &Value) -> Result<Value, String> {
         fl_folder: None,
         match_sounds: false,
     };
-    let dir =
-        optional_path(args, "out").unwrap_or_else(|| rebuild::output_dir(&options).join("stems"));
+    let dir = optional_path(args, "out").unwrap_or_else(|| rebuild::output_dir(&options));
     separate::split(&file, &dir)?;
     Ok(json!({ "stems": dir.display().to_string() }))
 }

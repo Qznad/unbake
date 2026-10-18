@@ -66,25 +66,18 @@ pub fn analyze_song(file: &Path) -> Result<SongInfo, String> {
     })
 }
 
-// rebuilds a song into an output folder of stems, midi, an flp, a preview and a report
+// rebuilds a song into a folder fl studio can open as it is, with midi, previews and the rest in extras
 pub fn run(options: &Options) -> Result<Report, String> {
     let out = output_dir(options);
-    let stems_dir = out.join("stems");
-    let fl_dir = out.join(song_name(options));
-    for dir in [
-        &out,
-        &stems_dir,
-        &fl_dir,
-        &out.join("midi"),
-        &out.join("render"),
-    ] {
+    let extras = out.join("extras");
+    for dir in [&out, &extras.join("midi"), &extras.join("render")] {
         create_dir(dir)?;
     }
 
     progress("loading the song");
-    let song = convert::load(&options.input, &out)?;
+    let song = convert::load(&options.input, &extras)?;
     let mix = Signal::from_wav(&song);
-    let converted = out.join("source.wav");
+    let converted = extras.join("source.wav");
     let song_path = if converted.exists() {
         converted
     } else {
@@ -93,11 +86,11 @@ pub fn run(options: &Options) -> Result<Report, String> {
 
     progress("separating stems (this is the slow part)");
     match &options.stems {
-        Some(dir) => separate::copy_stems(dir, &stems_dir)?,
-        None => separate::split(&song_path, &stems_dir)?,
+        Some(dir) => separate::copy_stems(dir, &out)?,
+        None => separate::split(&song_path, &out)?,
     }
-    let stems = load_stems(&stems_dir)?;
-    save(&mix, &stems_dir.join("mix.wav"))?;
+    let stems = load_stems(&out)?;
+    save(&mix, &extras.join("mix.wav"))?;
 
     progress("finding the tempo, bars, key and sections");
     let rhythm = if stems.drums.peak() > 0.01 {
@@ -177,14 +170,14 @@ pub fn run(options: &Options) -> Result<Report, String> {
             notes: notes.clone(),
         };
         midi::write(
-            &out.join("midi").join(format!("{}.mid", name)),
+            &extras.join("midi").join(format!("{}.mid", name)),
             grid.bpm,
             std::slice::from_ref(&track),
             &[],
         )?;
         tracks.push(track);
     }
-    midi::write(&out.join("midi/song.mid"), grid.bpm, &tracks, &markers)?;
+    midi::write(&extras.join("midi/song.mid"), grid.bpm, &tracks, &markers)?;
 
     let mut other_notes = melody_notes.clone();
     other_notes.extend_from_slice(&chord_notes);
@@ -228,7 +221,7 @@ pub fn run(options: &Options) -> Result<Report, String> {
     progress("preparing a sound for every part");
     let sounds = sounds::prepare(
         options.sounds.as_deref(),
-        &fl_dir,
+        &out,
         &stems.drums,
         &stems.bass,
         &drum_hits,
@@ -241,8 +234,7 @@ pub fn run(options: &Options) -> Result<Report, String> {
     let track_names: Vec<String> = lanes.iter().map(|l| l.name.clone()).collect();
     let flp_status = write_flp(
         options,
-        &stems_dir,
-        &fl_dir,
+        &out,
         &arrangement,
         &track_names,
         &grid,
@@ -262,7 +254,7 @@ pub fn run(options: &Options) -> Result<Report, String> {
             &stems.drums,
             &voices,
             &grid,
-            &out,
+            &extras,
             &measured_on,
             &mut preview,
         )?,
@@ -272,7 +264,7 @@ pub fn run(options: &Options) -> Result<Report, String> {
             &stems.bass,
             &voices,
             &grid,
-            &out,
+            &extras,
             &measured_on,
             &mut preview,
         )?,
@@ -282,7 +274,7 @@ pub fn run(options: &Options) -> Result<Report, String> {
             &stems.other,
             &voices,
             &grid,
-            &out,
+            &extras,
             &measured_on,
             &mut preview,
         )?,
@@ -290,7 +282,7 @@ pub fn run(options: &Options) -> Result<Report, String> {
     if preview.peak() > 0.99 {
         preview = preview.scaled(0.99 / preview.peak());
     }
-    save(&preview, &out.join("render/mix.wav"))?;
+    save(&preview, &extras.join("render/mix.wav"))?;
 
     let report = Report {
         source: options.input.display().to_string(),
@@ -323,7 +315,7 @@ pub fn run(options: &Options) -> Result<Report, String> {
                 .to_string(),
         ],
     };
-    report::write_json(&report, &out.join("report.json"))?;
+    report::write_json(&report, &extras.join("report.json"))?;
     report::write_html(&report, &out.join("report.html"))?;
     progress(&format!("done, everything is in {}", out.display()));
     Ok(report)
@@ -396,12 +388,11 @@ fn transcribe_chords(other: &Signal, bass: &Signal, grid: &Grid, bars: u32) -> V
     chords::detect(&upper, &low, frame_rate, grid, bars)
 }
 
-// writes the fl studio project into its own folder with every sound and stem it plays next to it
+// writes the fl studio project next to every sound and stem it plays
 #[allow(clippy::too_many_arguments)]
 fn write_flp(
     options: &Options,
-    stems_dir: &Path,
-    fl_dir: &Path,
+    out: &Path,
     arrangement: &Arrangement,
     track_names: &[String],
     grid: &Grid,
@@ -424,19 +415,17 @@ fn write_flp(
     } else {
         (0, 0)
     };
-    let mut stems = Vec::new();
-    for name in ["drums", "bass", "other", "vocals"] {
-        let stem_name = format!("{} stem", capitalize(name));
-        link_or_copy(
-            &stems_dir.join(format!("{}.wav", name)),
-            &fl_dir.join(format!("{}.wav", stem_name)),
-        )?;
-        stems.push(Stem {
-            path: format!("{}\\{}.wav", folder, stem_name),
-            name: stem_name,
-            seconds,
-        });
-    }
+    let stems = separate::STEMS
+        .iter()
+        .map(|stem| {
+            let file = separate::stem_file(stem);
+            Stem {
+                name: file.trim_end_matches(".wav").to_string(),
+                path: format!("{}\\{}", folder, file),
+                seconds,
+            }
+        })
+        .collect();
     let extras = Extras {
         sounds: sounds
             .iter()
@@ -462,29 +451,16 @@ fn write_flp(
         &extras,
     )?;
     warnings.extend(built.warnings);
-    let song = song_name(options);
-    flp::events::write(&fl_dir.join(format!("{}.flp", song)), &built.project)?;
+    let file = format!("{}.flp", song_name(options));
+    flp::events::write(&out.join(&file), &built.project)?;
     Ok(format!(
-        "{}/{}.flp with {} patterns, {} clips and {} markers, copy the whole {} folder to {} on windows",
-        song,
-        song,
+        "{} with {} patterns, {} clips and {} markers, copy this whole folder to {} on windows",
+        file,
         built.patterns,
         built.clips,
         markers.len(),
-        song,
         folder
     ))
-}
-
-// puts a file at a second place without using more disk space, copying it when that isn't possible
-fn link_or_copy(from: &Path, to: &Path) -> Result<(), String> {
-    let _ = std::fs::remove_file(to);
-    if std::fs::hard_link(from, to).is_ok() {
-        return Ok(());
-    }
-    std::fs::copy(from, to)
-        .map(|_| ())
-        .map_err(|e| format!("can't copy {} to {}: {}", from.display(), to.display(), e))
 }
 
 // where the song folder will sit on windows, fl studio looks for its sounds there first
@@ -493,7 +469,7 @@ pub fn fl_folder(options: &Options) -> String {
         Some(folder) => folder.trim_end_matches('\\').to_string(),
         None => format!(
             "%FLStudioUserData%\\Projects\\unbake\\{}",
-            song_name(options)
+            folder_name(options)
         ),
     }
 }
@@ -506,7 +482,7 @@ fn rebuild_part(
     stem: &Signal,
     voices: &Voices,
     grid: &Grid,
-    out: &Path,
+    extras: &Path,
     measured_on: &str,
     preview: &mut Signal,
 ) -> Result<PartReport, String> {
@@ -521,7 +497,7 @@ fn rebuild_part(
     let rendered = raw.scaled(math::db_to_gain(gain_db) as f32);
     save(
         &rendered,
-        &out.join("render").join(format!("{}.wav", stem_name)),
+        &extras.join("render").join(format!("{}.wav", stem_name)),
     )?;
     preview.mix_in(&rendered);
 
@@ -535,8 +511,8 @@ fn rebuild_part(
         part: name.to_string(),
         notes: notes.len(),
         detail: describe(notes),
-        original: format!("stems/{}.wav", stem_name),
-        rebuild: format!("render/{}.wav", stem_name),
+        original: separate::stem_file(stem_name),
+        rebuild: format!("extras/render/{}.wav", stem_name),
         original_lufs: round(original_lufs, 1),
         gain_db: round(gain_db, 1),
         scores,
@@ -598,15 +574,26 @@ pub fn song_name(options: &Options) -> String {
 pub fn output_dir(options: &Options) -> PathBuf {
     match &options.out {
         Some(out) => out.clone(),
-        None => PathBuf::from(format!("{}_rebuild", song_name(options))),
+        None => PathBuf::from(song_name(options)),
     }
+}
+
+// the name of the output folder, which is also the project folder's name on windows
+fn folder_name(options: &Options) -> String {
+    let out = output_dir(options);
+    std::path::absolute(&out)
+        .unwrap_or(out)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| song_name(options))
 }
 
 // loads the four stems from a folder as mono signals
 pub fn load_stems(dir: &Path) -> Result<Stems, String> {
     let load = |name: &str| -> Result<Signal, String> {
-        let path = dir.join(format!("{}.wav", name));
-        let wav = convert::load(&path, &dir.join("converted").join(name))?;
+        let path = dir.join(separate::stem_file(name));
+        let work_dir = std::env::temp_dir().join("unbake").join(name);
+        let wav = convert::load(&path, &work_dir)?;
         Ok(Signal::from_wav(&wav))
     };
     Ok(Stems {
@@ -617,29 +604,20 @@ pub fn load_stems(dir: &Path) -> Result<Stems, String> {
     })
 }
 
-// the files in the output folder and its folders, as paths relative to it
+// the files in the output folder and every folder inside it, as paths relative to it
 fn written_files(out: &Path) -> Vec<String> {
-    let mut dirs = vec![String::new()];
-    if let Ok(entries) = std::fs::read_dir(out) {
-        for entry in entries.flatten() {
-            if entry.path().is_dir() {
-                dirs.push(entry.file_name().to_string_lossy().to_string());
-            }
-        }
-    }
     let mut files = Vec::new();
-    for dir in dirs {
-        let Ok(entries) = std::fs::read_dir(out.join(&dir)) else {
+    let mut folders = vec![PathBuf::new()];
+    while let Some(folder) = folders.pop() {
+        let Ok(entries) = std::fs::read_dir(out.join(&folder)) else {
             continue;
         };
         for entry in entries.flatten() {
-            if entry.path().is_file() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                files.push(if dir.is_empty() {
-                    name
-                } else {
-                    format!("{}/{}", dir, name)
-                });
+            let relative = folder.join(entry.file_name());
+            if entry.path().is_dir() {
+                folders.push(relative);
+            } else {
+                files.push(relative.to_string_lossy().replace('\\', "/"));
             }
         }
     }

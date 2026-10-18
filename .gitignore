@@ -3,7 +3,8 @@
 # audio test files and pipeline outputs (copyright + size)
 *.mp3
 *.wav
-*_rebuild/
+extras/
+report.html
 separated/
 docs/
 *.flp

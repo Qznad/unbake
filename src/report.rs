@@ -123,8 +123,8 @@ pub fn write_html(report: &Report, path: &Path) -> Result<(), String> {
          <h1>unbake report</h1>\n<p class=\"source\">{}</p>\n\
          <dl><dt>Tempo</dt><dd>{} BPM</dd><dt>Key</dt><dd>{} (same notes as {})</dd><dt>Bars</dt><dd>{}</dd>\
          <dt>Length</dt><dd>{:.1} s</dd><dt>FL project</dt><dd>{}</dd></dl>\n\
-         <div class=\"ab\"><label>Original mix <audio controls preload=\"none\" src=\"stems/mix.wav\"></audio></label>\n\
-         <label>Rebuild preview <audio controls preload=\"none\" src=\"render/mix.wav\"></audio></label></div>\n\
+         <div class=\"ab\"><label>Original mix <audio controls preload=\"none\" src=\"extras/mix.wav\"></audio></label>\n\
+         <label>Rebuild preview <audio controls preload=\"none\" src=\"extras/render/mix.wav\"></audio></label></div>\n\
          <h2>Sections</h2>\n<ul>{}</ul>\n<p>Chords: {}</p>\n{}\n<h2>Sounds in the FL project</h2>\n<ul>{}</ul>\n\
          <h2>Sound matching</h2>\n<ul>{}</ul>\n\
          <h2>Warnings</h2>\n<ul>{}</ul>\n<h2>Limits</h2>\n<ul>{}</ul>\n\

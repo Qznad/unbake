@@ -46,11 +46,7 @@ enum Command {
     #[command(about = "separate a song into drums, bass, other and vocals with demucs")]
     Split {
         file: PathBuf,
-        #[arg(
-            short,
-            long,
-            help = "folder for the stems [default: <song>_rebuild/stems]"
-        )]
+        #[arg(short, long, help = "folder for the stems [default: <song>]")]
         out: Option<PathBuf>,
     },
 
@@ -59,7 +55,11 @@ enum Command {
     )]
     Rebuild {
         file: PathBuf,
-        #[arg(short, long, help = "output folder [default: <song>_rebuild]")]
+        #[arg(
+            short,
+            long,
+            help = "output folder, also the fl studio project folder [default: <song>]"
+        )]
         out: Option<PathBuf>,
         #[arg(long, help = "use the stems in this folder instead of running demucs")]
         stems: Option<PathBuf>,
@@ -75,7 +75,7 @@ enum Command {
         sounds: Option<PathBuf>,
         #[arg(
             long,
-            help = "the windows folder you will copy the rebuild to [default: %FLStudioUserData%\\Projects\\unbake\\<song>]"
+            help = "the windows folder you will copy the output folder to [default: %FLStudioUserData%\\Projects\\unbake\\<output folder name>]"
         )]
         fl_folder: Option<String>,
         #[arg(long, help = "skip tuning the synth sounds to the stems, faster")]
@@ -131,7 +131,6 @@ fn run(command: Command) -> Result<(), String> {
                     fl_folder: None,
                     match_sounds: false,
                 })
-                .join("stems")
             });
             separate::split(&file, &dir)?;
             println!("Stems saved in {}", dir.display());
