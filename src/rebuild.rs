@@ -122,7 +122,14 @@ pub fn run(options: &Options) -> Result<Report, String> {
     progress("transcribing drums, bass, melody and chords at the same time");
     let ((drum_hits, drum_notes), bass_notes, melody_notes, chord_spans) =
         std::thread::scope(|scope| {
-            let drums = scope.spawn(|| transcribe_drums(&stems.drums, &grid));
+            let drums = scope.spawn(|| {
+                transcribe_drums(
+                    &stems.drums,
+                    &grid,
+                    options.sounds.as_deref(),
+                    &out.join("samples"),
+                )
+            });
             let bass = scope.spawn(|| transcribe(&stems.bass, &grid, Part::Bass, 30.0, 400.0, 0.6));
             let melody = scope.spawn(|| transcribe_melody(&stems.other, &grid));
             let chords = scope.spawn(|| transcribe_chords(&stems.other, &stems.bass, &grid, bars));
@@ -322,10 +329,25 @@ pub fn run(options: &Options) -> Result<Report, String> {
     Ok(report)
 }
 
-// finds the drum hits in the drum stem, and the same hits snapped to the grid
-fn transcribe_drums(stem: &Signal, grid: &Grid) -> (Vec<Hit>, Vec<Note>) {
+// finds the drum hits in two passes, first by frequency bands, then by matching each drum's own sound
+fn transcribe_drums(
+    stem: &Signal,
+    grid: &Grid,
+    user_dir: Option<&Path>,
+    samples_dir: &Path,
+) -> (Vec<Hit>, Vec<Note>) {
     let spec = Spectrogram::standard(&stem.normalized());
-    let hits = drums::detect(&spec);
+    let first = drums::detect(&spec);
+
+    let mut templates = Vec::new();
+    for part in [Part::Kick, Part::Snare, Part::Hat] {
+        if let Some(sound) = sounds::drum_sound(user_dir, samples_dir, stem, &first, part) {
+            templates.push((part, drums::template(&sound)));
+        }
+    }
+    let matched = drums::detect_with_templates(&spec, &templates);
+    let hits = drums::merge_passes(&first, &matched);
+
     let notes = drums::to_notes(&hits, grid);
     (hits, notes)
 }

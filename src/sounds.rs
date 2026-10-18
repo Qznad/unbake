@@ -70,6 +70,22 @@ pub fn prepare(
     Ok(out)
 }
 
+// the sound of a drum, the user's own when given, otherwise the cleanest hit cut from the stem
+pub fn drum_sound(
+    user_dir: Option<&Path>,
+    samples_dir: &Path,
+    stem: &Signal,
+    hits: &[Hit],
+    part: Part,
+) -> Option<Signal> {
+    if let Some(path) = user_dir.and_then(|dir| find_user_file(dir, part)) {
+        if let Ok((sound, _)) = user_sound(&path, part, samples_dir) {
+            return Some(sound);
+        }
+    }
+    cut_drum(stem, hits, part)
+}
+
 // the user's file for a part, named after it like kick.wav, lead.mp3 or pad.flac
 fn find_user_file(dir: &Path, part: Part) -> Option<PathBuf> {
     let names: &[&str] = match part {
