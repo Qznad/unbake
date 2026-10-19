@@ -97,7 +97,9 @@ enum Command {
     #[command(about = "list the version, tempo, channels and patterns of an fl studio project")]
     FlpInfo { file: PathBuf },
 
-    #[command(about = "score a rebuild against the fl studio project the song was made from")]
+    #[command(
+        about = "score a rebuild against the song's real notes, its fl studio project or a slakh track folder"
+    )]
     Eval { project: PathBuf, rebuild: PathBuf },
 
     #[command(about = "run as an mcp server so ai agents can use unbake, over stdin and stdout")]
@@ -266,15 +268,14 @@ fn run(command: Command) -> Result<(), String> {
             println!("Melody:      compared with \"{}\"", result.melody_channel);
             println!("Chords:      {:.2} similarity per bar", result.chords);
             println!("Harmony:     {:.2} similarity per bar", result.harmony);
-            match result.patterns_found {
-                Some(n) => println!(
-                    "Patterns:    {} used, the real project uses {}",
-                    n, result.patterns_truth
-                ),
-                None => println!(
-                    "Patterns:    no .flp in the rebuild, the real project uses {}",
-                    result.patterns_truth
-                ),
+            let found = result
+                .patterns_found
+                .map_or("no .flp in the rebuild".to_string(), |n| {
+                    format!("{} used", n)
+                });
+            match result.patterns_truth {
+                Some(n) => println!("Patterns:    {}, the real project uses {}", found, n),
+                None => println!("Patterns:    {}", found),
             }
             for note in &result.notes {
                 println!("Note:        {}", note);

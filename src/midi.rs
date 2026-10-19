@@ -15,6 +15,7 @@ pub struct Marker {
 
 pub struct ReadTrack {
     pub notes: Vec<(u32, u32, u8)>,
+    pub tempos: Vec<(u32, u32)>,
 }
 
 struct Event {
@@ -154,9 +155,10 @@ pub fn read(path: &Path) -> Result<(u16, Vec<ReadTrack>), String> {
     Ok((ppq, tracks))
 }
 
-// the notes of one track chunk, pairing each note on with its note off
+// the notes and tempo changes of one track chunk, pairing each note on with its note off
 fn read_track(body: &[u8]) -> ReadTrack {
     let mut notes = Vec::new();
+    let mut tempos = Vec::new();
     let mut held: HashMap<u8, u32> = HashMap::new();
     let mut tick = 0u32;
     let mut status = 0u8;
@@ -167,20 +169,33 @@ fn read_track(body: &[u8]) -> ReadTrack {
         if i >= body.len() {
             break;
         }
-        if body[i] & 0x80 != 0 {
-            status = body[i];
-            i += 1;
-        }
-        match status {
+        match body[i] {
             0xFF => {
-                i += 1;
+                let kind = body.get(i + 1).copied().unwrap_or(0);
+                i += 2;
                 let length = read_varlen(body, &mut i) as usize;
+                if kind == 0x51 && length == 3 && i + 3 <= body.len() {
+                    tempos.push((
+                        tick,
+                        u32::from_be_bytes([0, body[i], body[i + 1], body[i + 2]]),
+                    ));
+                }
                 i = (i + length).min(body.len());
+                continue;
             }
             0xF0 | 0xF7 => {
+                i += 1;
                 let length = read_varlen(body, &mut i) as usize;
                 i += length;
+                continue;
             }
+            byte if byte & 0x80 != 0 => {
+                status = byte;
+                i += 1;
+            }
+            _ => {}
+        }
+        match status {
             s if s & 0xF0 == 0x80 || s & 0xF0 == 0x90 => {
                 if i + 1 >= body.len() {
                     break;
@@ -198,7 +213,26 @@ fn read_track(body: &[u8]) -> ReadTrack {
         }
     }
     notes.sort();
-    ReadTrack { notes }
+    ReadTrack { notes, tempos }
+}
+
+// the time in seconds of a tick, following every tempo change, at 120 bpm before the first one
+pub fn seconds_at(tick: u32, ppq: u16, tempos: &[(u32, u32)]) -> f64 {
+    let mut sorted = tempos.to_vec();
+    sorted.sort();
+    let per_tick = |micros: u32| micros as f64 / 1e6 / ppq as f64;
+    let mut time = 0.0;
+    let mut last = 0u32;
+    let mut micros = 500_000u32;
+    for (at, value) in sorted {
+        if at >= tick {
+            break;
+        }
+        time += (at - last) as f64 * per_tick(micros);
+        last = at;
+        micros = value;
+    }
+    time + (tick - last) as f64 * per_tick(micros)
 }
 
 // reads a number stored in groups of 7 bits, biggest first
@@ -262,6 +296,16 @@ mod tests {
         let (ppq, tracks) = read(&path).unwrap();
         assert_eq!(ppq, 96);
         assert_eq!(tracks[1].notes, vec![(0, 96, 45)]);
+        assert_eq!(tracks[0].tempos, vec![(0, 500_000)]);
         assert!(bytes.windows(4).any(|w| w == [0x60, 0x80, 45, 0]));
+    }
+
+    // a beat at 120 bpm then beats at 60 bpm add up to half a second plus a second each
+    #[test]
+    fn seconds_follow_tempo_changes() {
+        let tempos = [(0, 500_000), (96, 1_000_000)];
+        assert_eq!(seconds_at(96, 96, &tempos), 0.5);
+        assert_eq!(seconds_at(288, 96, &tempos), 2.5);
+        assert_eq!(seconds_at(48, 96, &[]), 0.25);
     }
 }
