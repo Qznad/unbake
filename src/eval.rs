@@ -245,7 +245,7 @@ fn flp_truth(path: &Path) -> Result<Truth, String> {
     })
 }
 
-// the real notes of a slakh track folder, one voice per rendered stem, all bass stems as one
+// the real notes of a slakh track folder, one voice per stem that has audio, all bass stems as one
 fn slakh_truth(dir: &Path) -> Result<Truth, String> {
     let meta_path = dir.join("metadata.yaml");
     let meta = std::fs::read_to_string(&meta_path)
@@ -256,11 +256,13 @@ fn slakh_truth(dir: &Path) -> Result<Truth, String> {
     let mut voices: Vec<Voice> = Vec::new();
     let mut bass_notes: Vec<Timed> = Vec::new();
     for stem in slakh_stems(&meta) {
-        if !stem.rendered {
-            continue;
-        }
         let path = dir.join("MIDI").join(format!("{}.mid", stem.id));
-        if !path.exists() {
+        let heard = ["wav", "flac"].iter().any(|ext| {
+            dir.join("stems")
+                .join(format!("{}.{}", stem.id, ext))
+                .exists()
+        });
+        if !path.exists() || !heard {
             continue;
         }
         let (ppq, tracks) = midi::read(&path)?;
@@ -331,7 +333,6 @@ struct SlakhStem {
     class: String,
     program: String,
     drum: bool,
-    rendered: bool,
 }
 
 // the stems listed in a slakh metadata.yaml, read line by line
@@ -354,7 +355,6 @@ fn slakh_stems(meta: &str) -> Vec<SlakhStem> {
                 class: String::new(),
                 program: String::new(),
                 drum: false,
-                rendered: true,
             });
             continue;
         }
@@ -370,7 +370,6 @@ fn slakh_stems(meta: &str) -> Vec<SlakhStem> {
             "inst_class" => stem.class = value,
             "midi_program_name" => stem.program = value,
             "is_drum" => stem.drum = value == "true",
-            "audio_rendered" => stem.rendered = value == "true",
             _ => {}
         }
     }
@@ -538,7 +537,7 @@ mod tests {
         assert_eq!(stems[0].id, "S00");
         assert_eq!(stems[0].class, "Guitar");
         assert_eq!(stems[0].program, "Distortion Guitar");
-        assert!(!stems[0].drum && stems[0].rendered);
-        assert!(stems[1].drum && !stems[1].rendered);
+        assert!(!stems[0].drum);
+        assert!(stems[1].drum);
     }
 }
