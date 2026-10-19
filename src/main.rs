@@ -7,6 +7,7 @@
 mod analysis;
 mod arrange;
 mod audio;
+mod basic_pitch;
 mod compare;
 mod eval;
 mod flp;

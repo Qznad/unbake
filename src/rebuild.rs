@@ -6,6 +6,7 @@ use crate::analysis::{chroma, drums, key, notes, onsets, pitch, tempo};
 use crate::arrange::{self, Arrangement, Lane};
 use crate::audio::signal::Signal;
 use crate::audio::{convert, loudness, math, wav};
+use crate::basic_pitch;
 use crate::compare;
 use crate::flp;
 use crate::flp::build::{Extras, Sound, Stem};
@@ -120,21 +121,44 @@ pub fn run(options: &Options) -> Result<Report, String> {
         .collect();
 
     progress("transcribing drums, bass, melody and chords at the same time");
-    let ((drum_hits, drum_notes), bass_notes, melody_notes, chord_spans) =
+    let note_dir = extras.join("basic_pitch");
+    let bass_path = out.join(separate::stem_file("bass"));
+    let other_path = out.join(separate::stem_file("other"));
+    let ((drum_hits, drum_notes), heard_bass, heard_other, chord_spans) =
         std::thread::scope(|scope| {
             let drums =
                 scope.spawn(|| transcribe_drums(&stems.drums, &grid, options.sounds.as_deref()));
-            let bass = scope.spawn(|| transcribe(&stems.bass, &grid, Part::Bass, 30.0, 400.0, 0.6));
-            let melody = scope.spawn(|| transcribe_melody(&stems.other, &grid));
+            let bass = scope.spawn(|| basic_pitch::transcribe(&bass_path, &note_dir));
+            let other = scope.spawn(|| basic_pitch::transcribe(&other_path, &note_dir));
             let chords = scope.spawn(|| transcribe_chords(&stems.other, &stems.bass, &grid, bars));
             (
                 drums.join().expect("drum transcription crashed"),
                 bass.join().expect("bass transcription crashed"),
-                melody.join().expect("melody transcription crashed"),
+                other.join().expect("melody transcription crashed"),
                 chords.join().expect("chord detection crashed"),
             )
         });
-    let chord_notes = chords::to_notes(&chord_spans);
+    let mut warnings = Vec::new();
+    let bass_notes = match heard_bass {
+        Ok(events) => basic_pitch::to_notes(&events, &grid, Part::Bass),
+        Err(e) => {
+            warnings.push(format!("{}, so bass used the built-in pitch tracker", e));
+            transcribe(&stems.bass, &grid, Part::Bass, 30.0, 400.0, 0.6)
+        }
+    };
+    let (melody_notes, chord_notes) = match heard_other {
+        Ok(events) => basic_pitch::split_top(&basic_pitch::to_notes(&events, &grid, Part::Melody)),
+        Err(e) => {
+            warnings.push(format!(
+                "{}, so melody and chords used the built-in trackers",
+                e
+            ));
+            (
+                transcribe_melody(&stems.other, &grid),
+                chords::to_notes(&chord_spans),
+            )
+        }
+    };
 
     progress("finding the loops each part repeats");
     let mut bass_notes = bass_notes;
@@ -230,7 +254,6 @@ pub fn run(options: &Options) -> Result<Report, String> {
         &voices,
     )?;
 
-    let mut warnings = Vec::new();
     let track_names: Vec<String> = lanes.iter().map(|l| l.name.clone()).collect();
     let flp_status = write_flp(
         options,
