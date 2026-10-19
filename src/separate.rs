@@ -52,11 +52,11 @@ pub fn split(song: &Path, dir: &Path) -> Result<(), String> {
 pub fn copy_stems(from: &Path, dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("can't create {}: {}", dir.display(), e))?;
     for stem in STEMS {
-        let plain = from.join(format!("{}.wav", stem));
-        let source = if plain.exists() {
-            plain
+        let named = from.join(stem_file(stem));
+        let source = if named.exists() {
+            named
         } else {
-            from.join(stem_file(stem))
+            from.join(format!("{}.wav", stem))
         };
         let target = dir.join(stem_file(stem));
         if source == target {
