@@ -94,6 +94,14 @@ pub fn to_notes(events: &[Event], grid: &Grid, part: Part) -> Vec<Note> {
     notes
 }
 
+// keeps the lowest note starting on each step, so a single line like a bass loses the overtones heard above it
+pub fn lowest_line(notes: &[Note]) -> Vec<Note> {
+    let mut line = notes.to_vec();
+    line.sort_by_key(|n| (n.start, n.key));
+    line.dedup_by_key(|n| n.start);
+    line
+}
+
 // splits notes into the melody, the loudest one starting on each step, and chords, the rest and any block chords
 pub fn split_lead(notes: &[Note]) -> (Vec<Note>, Vec<Note>) {
     let together = |i: usize| {
@@ -183,6 +191,27 @@ mod tests {
             vec![46, 62, 50, 72]
         );
         assert!(melody.iter().all(|n| n.length == 96));
+    }
+
+    // an octave and a fifth heard over each bass note are dropped, leaving the bass line
+    #[test]
+    fn keeps_the_lowest_line() {
+        let note = |key, start| Note {
+            part: Part::Bass,
+            key,
+            velocity: 100,
+            start,
+            length: STEP,
+        };
+        let notes = vec![
+            note(48, 0),
+            note(60, 0),
+            note(43, 24),
+            note(50, 24),
+            note(55, 24),
+        ];
+        let keys: Vec<u8> = lowest_line(&notes).iter().map(|n| n.key).collect();
+        assert_eq!(keys, vec![48, 43]);
     }
 
     // events become notes snapped to sixteenth steps, at least one step long

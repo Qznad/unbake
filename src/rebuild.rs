@@ -143,7 +143,7 @@ pub fn run(options: &Options) -> Result<Report, String> {
         });
     let mut warnings = Vec::new();
     let bass_notes = match heard_bass {
-        Ok(events) => basic_pitch::to_notes(&events, &grid, Part::Bass),
+        Ok(events) => basic_pitch::lowest_line(&basic_pitch::to_notes(&events, &grid, Part::Bass)),
         Err(e) => {
             warnings.push(format!("{}, so bass used the built-in pitch tracker", e));
             transcribe(&stems.bass, &grid, Part::Bass, 30.0, 400.0, 0.6)
