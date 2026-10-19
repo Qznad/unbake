@@ -20,6 +20,7 @@ mod report;
 mod separate;
 mod sounds;
 mod synth;
+mod theory;
 
 use audio::wav::Wav;
 use clap::{Parser, Subcommand};
@@ -81,6 +82,11 @@ enum Command {
         fl_folder: Option<String>,
         #[arg(long, help = "skip tuning the synth sounds to the stems, faster")]
         no_match: bool,
+        #[arg(
+            long,
+            help = "write the chords as clean triads that follow the key, easier to edit but less exact"
+        )]
+        simple_chords: bool,
     },
 
     #[command(about = "list the version, tempo, channels and patterns of an fl studio project")]
@@ -131,6 +137,7 @@ fn run(command: Command) -> Result<(), String> {
                     sounds: None,
                     fl_folder: None,
                     match_sounds: false,
+                    simple_chords: false,
                 })
             });
             separate::split(&file, &dir)?;
@@ -145,6 +152,7 @@ fn run(command: Command) -> Result<(), String> {
             sounds,
             fl_folder,
             no_match,
+            simple_chords,
         } => {
             let options = rebuild::Options {
                 input: file,
@@ -154,6 +162,7 @@ fn run(command: Command) -> Result<(), String> {
                 sounds,
                 fl_folder,
                 match_sounds: !no_match,
+                simple_chords,
             };
             let report = rebuild::run(&options)?;
             println!("Tempo:       {} bpm", report.tempo_bpm);
@@ -247,6 +256,7 @@ fn run(command: Command) -> Result<(), String> {
                 result.bass_channel, result.bass_octave_shift
             );
             println!("Melody:      compared with \"{}\"", result.melody_channel);
+            println!("Chords:      {:.2} similarity per bar", result.chords);
             println!("Harmony:     {:.2} similarity per bar", result.harmony);
             match result.patterns_found {
                 Some(n) => println!(

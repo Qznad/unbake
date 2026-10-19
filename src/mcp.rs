@@ -92,7 +92,8 @@ fn tools() -> Value {
                     "template": { "type": "string", "description": "your own FL Studio template, parts go to channels named Kick, Snare, Hat, Bass, Lead and Pad; leave out to use the built in one" },
                     "sounds": { "type": "string", "description": "folder with the user's own sounds named kick, snare, hat, bass, lead, pad" },
                     "fl_folder": { "type": "string", "description": "windows folder the rebuild will be copied to" },
-                    "match_sounds": { "type": "boolean", "description": "tune the synth sounds to the stems, default true" }
+                    "match_sounds": { "type": "boolean", "description": "tune the synth sounds to the stems, default true" },
+                    "simple_chords": { "type": "boolean", "description": "write the chords as clean triads that follow the key, easier to edit but less exact, default false" }
                 },
                 "required": ["file"]
             }
@@ -145,6 +146,7 @@ fn split(args: &Value) -> Result<Value, String> {
         sounds: None,
         fl_folder: None,
         match_sounds: false,
+        simple_chords: false,
     };
     let dir = optional_path(args, "out").unwrap_or_else(|| rebuild::output_dir(&options));
     separate::split(&file, &dir)?;
@@ -161,6 +163,7 @@ fn rebuild_tool(args: &Value) -> Result<Value, String> {
         sounds: optional_path(args, "sounds"),
         fl_folder: args["fl_folder"].as_str().map(|s| s.to_string()),
         match_sounds: args["match_sounds"].as_bool().unwrap_or(true),
+        simple_chords: args["simple_chords"].as_bool().unwrap_or(false),
     };
     let report = rebuild::run(&options)?;
     let mut value = serde_json::to_value(report).map_err(|e| e.to_string())?;

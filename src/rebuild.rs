@@ -17,6 +17,7 @@ use crate::report::{self, PartReport, Report};
 use crate::separate;
 use crate::sounds::{self, SoundFile};
 use crate::synth::{self, Voices};
+use crate::theory;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -30,6 +31,7 @@ pub struct Options {
     pub sounds: Option<PathBuf>,
     pub fl_folder: Option<String>,
     pub match_sounds: bool,
+    pub simple_chords: bool,
 }
 
 pub struct Stems {
@@ -146,8 +148,18 @@ pub fn run(options: &Options) -> Result<Report, String> {
             transcribe(&stems.bass, &grid, Part::Bass, 30.0, 400.0, 0.6)
         }
     };
-    let (melody_notes, chord_notes) = match heard_other {
-        Ok(events) => basic_pitch::split_top(&basic_pitch::to_notes(&events, &grid, Part::Melody)),
+    let (melody_notes, chord_notes, chord_spans) = match heard_other {
+        Ok(events) => {
+            let heard = basic_pitch::to_notes(&events, &grid, Part::Melody);
+            let (melody, rest) = basic_pitch::split_top(&heard);
+            let progression = theory::progression(&heard, &bass_notes, &key, bars);
+            let chords = if options.simple_chords {
+                theory::voice(&progression)
+            } else {
+                rest
+            };
+            (melody, chords, progression)
+        }
         Err(e) => {
             warnings.push(format!(
                 "{}, so melody and chords used the built-in trackers",
@@ -156,6 +168,7 @@ pub fn run(options: &Options) -> Result<Report, String> {
             (
                 transcribe_melody(&stems.other, &grid),
                 chords::to_notes(&chord_spans),
+                chord_spans,
             )
         }
     };

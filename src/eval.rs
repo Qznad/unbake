@@ -28,6 +28,7 @@ pub struct Evaluation {
     pub bass_octave_shift: i32,
     pub melody: Score,
     pub melody_channel: String,
+    pub chords: f64,
     pub harmony: f64,
     pub patterns_truth: usize,
     pub patterns_found: Option<usize>,
@@ -124,14 +125,21 @@ pub fn evaluate(project_path: &Path, rebuild_dir: &Path) -> Result<Evaluation, S
     let bass = score("bass", &truth_bass, &our_bass, true);
     let bass_octave_shift = octave_shift(&truth_bass, &our_bass);
     let our_melody = ours("melody.mid")?;
-    let (melody, melody_channel) =
-        best_melody(&summary, &melodic, bass_channel, truth_tick, &our_melody);
+    let (melody, melody_channel) = best_melody(&melodic, bass_channel, truth_tick, &our_melody);
+
+    let bar_seconds = 240.0 / tempo_truth;
+    let truth_chords: Vec<Timed> = melodic
+        .iter()
+        .filter(|n| Some(n.channel) != bass_channel && Some(n.channel) != melody_channel)
+        .map(|n| to_timed(n, truth_tick))
+        .collect();
+    let chords = harmony_similarity(&truth_chords, &ours("chords.mid")?, bar_seconds);
 
     let truth_harmony: Vec<Timed> = melodic.iter().map(|n| to_timed(n, truth_tick)).collect();
     let mut our_harmony = ours("bass.mid")?;
     our_harmony.extend(ours("melody.mid")?);
     our_harmony.extend(ours("chords.mid")?);
-    let harmony = harmony_similarity(&truth_harmony, &our_harmony, 240.0 / tempo_truth);
+    let harmony = harmony_similarity(&truth_harmony, &our_harmony, bar_seconds);
 
     let patterns_found = std::fs::read_dir(rebuild_dir).ok().and_then(|entries| {
         entries
@@ -151,7 +159,10 @@ pub fn evaluate(project_path: &Path, rebuild_dir: &Path) -> Result<Evaluation, S
             .unwrap_or_else(|| "none found".to_string()),
         bass_octave_shift,
         melody,
-        melody_channel,
+        melody_channel: melody_channel
+            .map(|c| channel_name(&summary, c))
+            .unwrap_or_else(|| "none found".to_string()),
+        chords: round(chords),
         harmony: round(harmony),
         patterns_truth: timeline::patterns_used(&project),
         patterns_found,
@@ -163,6 +174,8 @@ pub fn evaluate(project_path: &Path, rebuild_dir: &Path) -> Result<Evaluation, S
             "clips up to a bar long on drum channels count as hits, sampled breaks are not counted"
                 .to_string(),
             "harmony compares which notes sound in each bar across all melodic parts, from 0 to 1"
+                .to_string(),
+            "chords compares the same way, our chords against every real channel but the bass and the melody"
                 .to_string(),
         ],
     })
@@ -244,16 +257,15 @@ fn pick_bass(summary: &info::Summary, melodic: &[&TimedNote]) -> Option<u16> {
 
 // scores the found melody against every real melodic channel except the bass and keeps the best match
 fn best_melody(
-    summary: &info::Summary,
     melodic: &[&TimedNote],
     bass_channel: Option<u16>,
     tick: f64,
     found: &[Timed],
-) -> (Score, String) {
+) -> (Score, Option<u16>) {
     let mut channels: Vec<u16> = melodic.iter().map(|n| n.channel).collect();
     channels.sort();
     channels.dedup();
-    let mut best = (score("melody", &[], found, true), "none found".to_string());
+    let mut best = (score("melody", &[], found, true), None);
     for c in channels {
         if Some(c) == bass_channel {
             continue;
@@ -265,7 +277,7 @@ fn best_melody(
             .collect();
         let s = score("melody", &truth, found, true);
         if s.f > best.0.f {
-            best = (s, channel_name(summary, c));
+            best = (s, Some(c));
         }
     }
     best
