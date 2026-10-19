@@ -65,6 +65,31 @@ pub fn arrange(lanes: &[Lane]) -> Arrangement {
     Arrangement { patterns, clips }
 }
 
+// puts each lane into one pattern as long as the song, played once from the start, so nothing is lost
+pub fn whole(lanes: &[Lane]) -> Arrangement {
+    let mut patterns = Vec::new();
+    let mut clips = Vec::new();
+    for (track, lane) in lanes.iter().enumerate() {
+        let end = lane.notes.iter().map(|n| n.start + n.length).max();
+        let Some(end) = end else {
+            continue;
+        };
+        let mut notes = lane.notes.clone();
+        notes.sort_by_key(|n| (n.start, n.part, n.key));
+        patterns.push(Pattern {
+            name: lane.name.clone(),
+            notes,
+        });
+        clips.push(Clip {
+            pattern: patterns.len() - 1,
+            track: track as u16,
+            start: 0,
+            length: end.div_ceil(BAR) * BAR,
+        });
+    }
+    Arrangement { patterns, clips }
+}
+
 // plays the arrangement back as one list of notes for each lane
 pub fn expand(arrangement: &Arrangement, lanes: usize) -> Vec<Vec<Note>> {
     let mut out = vec![Vec::new(); lanes];
@@ -264,6 +289,29 @@ mod tests {
         };
         let arrangement = arrange(&[lane]);
         assert_eq!(arrangement.patterns.len(), 2);
+        let back = expand(&arrangement, 1);
+        notes.sort_by_key(|n| (n.start, n.part, n.key));
+        assert_eq!(back[0], notes);
+    }
+
+    // copying the whole song gives one pattern per lane that plays every note back where it was
+    #[test]
+    fn whole_keeps_every_note() {
+        let mut notes = Vec::new();
+        for phrase in 0..3 {
+            for step in [0, 4, 8, 12] {
+                notes.push(note(phrase * PHRASE + step * STEP, 45 + phrase as u8));
+            }
+        }
+        notes.push(note(PHRASE + 6 * STEP, 70));
+        let lane = Lane {
+            name: "Bass".to_string(),
+            notes: notes.clone(),
+        };
+        let arrangement = whole(&[lane]);
+        assert_eq!(arrangement.patterns.len(), 1);
+        assert_eq!(arrangement.clips.len(), 1);
+        assert_eq!(arrangement.clips[0].length, 2 * PHRASE + BAR);
         let back = expand(&arrangement, 1);
         notes.sort_by_key(|n| (n.start, n.part, n.key));
         assert_eq!(back[0], notes);

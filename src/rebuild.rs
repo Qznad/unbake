@@ -32,6 +32,7 @@ pub struct Options {
     pub fl_folder: Option<String>,
     pub match_sounds: bool,
     pub simple_chords: bool,
+    pub loops: bool,
 }
 
 pub struct Stems {
@@ -174,7 +175,7 @@ pub fn run(options: &Options) -> Result<Report, String> {
         heard_chords.clone()
     };
 
-    progress("finding the loops each part repeats");
+    progress("arranging the parts into patterns");
     let mut bass_notes = bass_notes;
     notes::fold_octaves(&mut bass_notes, 36);
     let names = ["drums", "bass", "melody", "chords"];
@@ -186,7 +187,11 @@ pub fn run(options: &Options) -> Result<Report, String> {
             notes,
         })
         .collect();
-    let arrangement = arrange::arrange(&lanes);
+    let arrangement = if options.loops {
+        arrange::arrange(&lanes)
+    } else {
+        arrange::whole(&lanes)
+    };
     let mut cleaned = arrange::expand(&arrangement, lanes.len());
     let chord_notes = cleaned.pop().unwrap_or_default();
     let melody_notes = cleaned.pop().unwrap_or_default();

@@ -87,6 +87,11 @@ enum Command {
             help = "write the chords as clean triads that follow the key, easier to edit but less exact"
         )]
         simple_chords: bool,
+        #[arg(
+            long,
+            help = "arrange each part as up to 4 reused 4 bar loops instead of one pattern copying the whole song"
+        )]
+        loops: bool,
     },
 
     #[command(about = "list the version, tempo, channels and patterns of an fl studio project")]
@@ -138,6 +143,7 @@ fn run(command: Command) -> Result<(), String> {
                     fl_folder: None,
                     match_sounds: false,
                     simple_chords: false,
+                    loops: false,
                 })
             });
             separate::split(&file, &dir)?;
@@ -153,6 +159,7 @@ fn run(command: Command) -> Result<(), String> {
             fl_folder,
             no_match,
             simple_chords,
+            loops,
         } => {
             let options = rebuild::Options {
                 input: file,
@@ -163,6 +170,7 @@ fn run(command: Command) -> Result<(), String> {
                 fl_folder,
                 match_sounds: !no_match,
                 simple_chords,
+                loops,
             };
             let report = rebuild::run(&options)?;
             println!("Tempo:       {} bpm", report.tempo_bpm);
