@@ -94,26 +94,25 @@ pub fn to_notes(events: &[Event], grid: &Grid, part: Part) -> Vec<Note> {
     notes
 }
 
-// splits notes into the highest line, as the melody, and the rest, as chords, with block chords kept whole
+// splits notes into the melody, the ones starting alone or on top, and chords, the ones under them or in block chords
 pub fn split_top(notes: &[Note]) -> (Vec<Note>, Vec<Note>) {
-    let mut melody = Vec::new();
+    let mut melody: Vec<Note> = Vec::new();
     let mut chords = Vec::new();
     for note in notes {
-        let covered = notes.iter().any(|other| {
-            other.key > note.key
-                && other.start <= note.start
-                && other.start + other.length > note.start
-        });
-        let voiced = notes
+        let together: Vec<&Note> = notes
+            .iter()
+            .filter(|other| other.start == note.start && other.key != note.key)
+            .collect();
+        let topped = together.iter().any(|other| other.key > note.key);
+        let block = together
             .iter()
             .filter(|other| {
                 other.key < note.key
-                    && other.start.abs_diff(note.start) <= STEP
                     && (other.start + other.length).abs_diff(note.start + note.length) <= STEP
             })
             .count()
             >= 2;
-        if covered || voiced {
+        if topped || block {
             chords.push(Note {
                 part: Part::Chords,
                 ..*note
@@ -158,6 +157,26 @@ mod tests {
         assert_eq!(keys(&melody), vec![72, 71, 71]);
         assert_eq!(keys(&chords), vec![60, 64, 65, 57, 60, 64]);
         assert!(melody.iter().all(|n| n.part == Part::Melody));
+    }
+
+    // a line that jumps between registers stays one melody even when its notes ring over each other
+    #[test]
+    fn keeps_a_jumping_line_whole() {
+        let note = |key, start| Note {
+            part: Part::Chords,
+            key,
+            velocity: 100,
+            start,
+            length: 96,
+        };
+        let notes = vec![note(46, 0), note(62, 24), note(50, 48), note(72, 72)];
+        let (melody, chords) = split_top(&notes);
+        assert!(chords.is_empty());
+        assert_eq!(
+            melody.iter().map(|n| n.key).collect::<Vec<_>>(),
+            vec![46, 62, 50, 72]
+        );
+        assert!(melody.iter().all(|n| n.length == 96));
     }
 
     // events become notes snapped to sixteenth steps, at least one step long

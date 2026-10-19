@@ -235,6 +235,7 @@ fn run(command: Command) -> Result<(), String> {
             println!("             real   found  matched  precision  recall     f");
             let mut rows = result.drums.clone();
             rows.push(result.bass.clone());
+            rows.push(result.melody.clone());
             for s in &rows {
                 println!(
                     "{:<10} {:>6}  {:>6}  {:>7}  {:>9.2}  {:>6.2}  {:>4.2}",
@@ -245,6 +246,7 @@ fn run(command: Command) -> Result<(), String> {
                 "Bass:        compared with \"{}\", found {} octaves off",
                 result.bass_channel, result.bass_octave_shift
             );
+            println!("Melody:      compared with \"{}\"", result.melody_channel);
             println!("Harmony:     {:.2} similarity per bar", result.harmony);
             match result.patterns_found {
                 Some(n) => println!(

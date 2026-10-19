@@ -26,6 +26,8 @@ pub struct Evaluation {
     pub bass: Score,
     pub bass_channel: String,
     pub bass_octave_shift: i32,
+    pub melody: Score,
+    pub melody_channel: String,
     pub harmony: f64,
     pub patterns_truth: usize,
     pub patterns_found: Option<usize>,
@@ -121,6 +123,9 @@ pub fn evaluate(project_path: &Path, rebuild_dir: &Path) -> Result<Evaluation, S
     let our_bass = ours("bass.mid")?;
     let bass = score("bass", &truth_bass, &our_bass, true);
     let bass_octave_shift = octave_shift(&truth_bass, &our_bass);
+    let our_melody = ours("melody.mid")?;
+    let (melody, melody_channel) =
+        best_melody(&summary, &melodic, bass_channel, truth_tick, &our_melody);
 
     let truth_harmony: Vec<Timed> = melodic.iter().map(|n| to_timed(n, truth_tick)).collect();
     let mut our_harmony = ours("bass.mid")?;
@@ -145,12 +150,16 @@ pub fn evaluate(project_path: &Path, rebuild_dir: &Path) -> Result<Evaluation, S
             .map(|c| channel_name(&summary, c))
             .unwrap_or_else(|| "none found".to_string()),
         bass_octave_shift,
+        melody,
+        melody_channel,
         harmony: round(harmony),
         patterns_truth: timeline::patterns_used(&project),
         patterns_found,
         notes: vec![
             "hits and notes count as matched within 50 ms".to_string(),
             "bass notes also need the same note name, in any octave".to_string(),
+            "melody is scored against the real channel, other than the bass, that it matches best"
+                .to_string(),
             "clips up to a bar long on drum channels count as hits, sampled breaks are not counted"
                 .to_string(),
             "harmony compares which notes sound in each bar across all melodic parts, from 0 to 1"
@@ -231,6 +240,35 @@ fn pick_bass(summary: &info::Summary, melodic: &[&TimedNote]) -> Option<u16> {
         }
     }
     best.map(|(c, _)| c)
+}
+
+// scores the found melody against every real melodic channel except the bass and keeps the best match
+fn best_melody(
+    summary: &info::Summary,
+    melodic: &[&TimedNote],
+    bass_channel: Option<u16>,
+    tick: f64,
+    found: &[Timed],
+) -> (Score, String) {
+    let mut channels: Vec<u16> = melodic.iter().map(|n| n.channel).collect();
+    channels.sort();
+    channels.dedup();
+    let mut best = (score("melody", &[], found, true), "none found".to_string());
+    for c in channels {
+        if Some(c) == bass_channel {
+            continue;
+        }
+        let truth: Vec<Timed> = melodic
+            .iter()
+            .filter(|n| n.channel == c)
+            .map(|n| to_timed(n, tick))
+            .collect();
+        let s = score("melody", &truth, found, true);
+        if s.f > best.0.f {
+            best = (s, channel_name(summary, c));
+        }
+    }
+    best
 }
 
 // how many found notes line up with real ones, as precision, recall and their balance
