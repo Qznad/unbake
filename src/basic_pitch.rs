@@ -94,25 +94,30 @@ pub fn to_notes(events: &[Event], grid: &Grid, part: Part) -> Vec<Note> {
     notes
 }
 
-// splits notes into the melody, the ones starting alone or on top, and chords, the ones under them or in block chords
-pub fn split_top(notes: &[Note]) -> (Vec<Note>, Vec<Note>) {
+// splits notes into the melody, the loudest one starting on each step, and chords, the rest and any block chords
+pub fn split_lead(notes: &[Note]) -> (Vec<Note>, Vec<Note>) {
+    let together = |i: usize| {
+        notes
+            .iter()
+            .enumerate()
+            .filter(move |&(j, other)| j != i && other.start == notes[i].start)
+    };
+    let block: Vec<bool> = (0..notes.len())
+        .map(|i| {
+            let end = notes[i].start + notes[i].length;
+            together(i)
+                .filter(|(_, other)| (other.start + other.length).abs_diff(end) <= STEP)
+                .count()
+                >= 2
+        })
+        .collect();
+
     let mut melody: Vec<Note> = Vec::new();
     let mut chords = Vec::new();
-    for note in notes {
-        let together: Vec<&Note> = notes
-            .iter()
-            .filter(|other| other.start == note.start && other.key != note.key)
-            .collect();
-        let topped = together.iter().any(|other| other.key > note.key);
-        let block = together
-            .iter()
-            .filter(|other| {
-                other.key < note.key
-                    && (other.start + other.length).abs_diff(note.start + note.length) <= STEP
-            })
-            .count()
-            >= 2;
-        if topped || block {
+    for (i, note) in notes.iter().enumerate() {
+        let topped = together(i)
+            .any(|(j, other)| !block[j] && (other.velocity, other.key) > (note.velocity, note.key));
+        if block[i] || topped {
             chords.push(Note {
                 part: Part::Chords,
                 ..*note
@@ -131,30 +136,31 @@ pub fn split_top(notes: &[Note]) -> (Vec<Note>, Vec<Note>) {
 mod tests {
     use super::*;
 
-    // a line over a held chord splits off it, a lone triad stays whole, and a two note pair keeps its top as melody
+    // the loudest note on each step is the melody, even under a chord, and a louder held triad doesn't drown a quiet lead
     #[test]
-    fn splits_the_top_line() {
-        let note = |key, start, length| Note {
+    fn splits_the_loudest_line() {
+        let note = |key, velocity, start, length| Note {
             part: Part::Chords,
             key,
-            velocity: 100,
+            velocity,
             start,
             length,
         };
         let notes = vec![
-            note(60, 0, 96),
-            note(64, 0, 96),
-            note(72, 0, 48),
-            note(71, 48, 48),
-            note(65, 192, 96),
-            note(71, 192, 96),
-            note(57, 384, 384),
-            note(60, 384, 384),
-            note(64, 384, 384),
+            note(55, 100, 0, 48),
+            note(60, 70, 0, 96),
+            note(64, 70, 0, 96),
+            note(71, 90, 48, 48),
+            note(65, 80, 192, 96),
+            note(71, 80, 192, 96),
+            note(57, 90, 384, 384),
+            note(60, 100, 384, 384),
+            note(64, 90, 384, 384),
+            note(76, 60, 384, 96),
         ];
-        let (melody, chords) = split_top(&notes);
+        let (melody, chords) = split_lead(&notes);
         let keys = |n: &[Note]| n.iter().map(|n| n.key).collect::<Vec<_>>();
-        assert_eq!(keys(&melody), vec![72, 71, 71]);
+        assert_eq!(keys(&melody), vec![55, 71, 71, 76]);
         assert_eq!(keys(&chords), vec![60, 64, 65, 57, 60, 64]);
         assert!(melody.iter().all(|n| n.part == Part::Melody));
     }
@@ -170,7 +176,7 @@ mod tests {
             length: 96,
         };
         let notes = vec![note(46, 0), note(62, 24), note(50, 48), note(72, 72)];
-        let (melody, chords) = split_top(&notes);
+        let (melody, chords) = split_lead(&notes);
         assert!(chords.is_empty());
         assert_eq!(
             melody.iter().map(|n| n.key).collect::<Vec<_>>(),

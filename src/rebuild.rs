@@ -152,7 +152,7 @@ pub fn run(options: &Options) -> Result<Report, String> {
     let (melody_notes, heard_chords, chord_spans) = match heard_other {
         Ok(events) => {
             let heard = basic_pitch::to_notes(&events, &grid, Part::Melody);
-            let (melody, rest) = basic_pitch::split_top(&heard);
+            let (melody, rest) = basic_pitch::split_lead(&heard);
             let progression = theory::progression(&heard, &bass_notes, &key, bars);
             (melody, rest, progression)
         }
