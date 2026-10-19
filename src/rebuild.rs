@@ -148,17 +148,12 @@ pub fn run(options: &Options) -> Result<Report, String> {
             transcribe(&stems.bass, &grid, Part::Bass, 30.0, 400.0, 0.6)
         }
     };
-    let (melody_notes, chord_notes, chord_spans) = match heard_other {
+    let (melody_notes, heard_chords, chord_spans) = match heard_other {
         Ok(events) => {
             let heard = basic_pitch::to_notes(&events, &grid, Part::Melody);
             let (melody, rest) = basic_pitch::split_top(&heard);
             let progression = theory::progression(&heard, &bass_notes, &key, bars);
-            let chords = if options.simple_chords {
-                theory::voice(&progression)
-            } else {
-                rest
-            };
-            (melody, chords, progression)
+            (melody, rest, progression)
         }
         Err(e) => {
             warnings.push(format!(
@@ -171,6 +166,12 @@ pub fn run(options: &Options) -> Result<Report, String> {
                 chord_spans,
             )
         }
+    };
+    let heard_melody = melody_notes.clone();
+    let chord_notes = if options.simple_chords {
+        theory::voice(&chord_spans)
+    } else {
+        heard_chords.clone()
     };
 
     progress("finding the loops each part repeats");
@@ -261,8 +262,11 @@ pub fn run(options: &Options) -> Result<Report, String> {
         &out,
         &stems.drums,
         &stems.bass,
+        &stems.other,
         &drum_hits,
         &bass_notes,
+        &heard_melody,
+        &heard_chords,
         &grid,
         &voices,
     )?;

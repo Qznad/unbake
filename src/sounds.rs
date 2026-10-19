@@ -3,11 +3,12 @@ use crate::analysis::pitch;
 use crate::analysis::spectrum::{HARMONIC_FACTOR, HOP};
 use crate::audio::signal::Signal;
 use crate::audio::{convert, math, wav};
-use crate::music::{Grid, Note, PPQ, Part};
+use crate::music::{Grid, Note, PPQ, Part, STEP};
 use crate::synth::{self, Voices};
 use std::path::{Path, PathBuf};
 
 pub const ROOT: u8 = 60;
+const MOST_COMPETITION: f32 = 0.35;
 const PARTS: [Part; 6] = [
     Part::Kick,
     Part::Snare,
@@ -31,11 +32,16 @@ pub fn prepare(
     dir: &Path,
     drums: &Signal,
     bass: &Signal,
+    other: &Signal,
     hits: &[Hit],
     bass_notes: &[Note],
+    heard_melody: &[Note],
+    heard_chords: &[Note],
     grid: &Grid,
     voices: &Voices,
 ) -> Result<Vec<SoundFile>, String> {
+    let mut heard_other = heard_melody.to_vec();
+    heard_other.extend_from_slice(heard_chords);
     std::fs::create_dir_all(dir).map_err(|e| format!("can't create {}: {}", dir.display(), e))?;
     let mut out = Vec::new();
 
@@ -54,7 +60,13 @@ pub fn prepare(
                 Some((cut, root)) => (cut, root, "cut from the bass stem".to_string()),
                 None => synth_sound(part, voices, bass.sample_rate),
             },
-            None => synth_sound(part, voices, drums.sample_rate),
+            None if part == Part::Melody => {
+                match cut_alone(other, heard_melody, &heard_other, grid) {
+                    Some((cut, root)) => (cut, root, "cut from the other stem".to_string()),
+                    None => synth_sound(part, voices, other.sample_rate),
+                }
+            }
+            None => synth_sound(part, voices, other.sample_rate),
         };
 
         let file = format!("{}.wav", part.channel_name());
@@ -171,6 +183,42 @@ fn cut_note(stem: &Signal, notes: &[Note], grid: &Grid) -> Option<(Signal, u8)> 
     if length < 0.12 {
         return None;
     }
+    Some((stem.slice(start, start + length).fade_out(0.03), note.key))
+}
+
+// the note with the least else sounding around it, cut from the stem, when it is clean enough
+fn cut_alone(
+    stem: &Signal,
+    candidates: &[Note],
+    everything: &[Note],
+    grid: &Grid,
+) -> Option<(Signal, u8)> {
+    let competition = |note: &Note| {
+        let from = note.start;
+        let to = note.start + note.length + STEP;
+        let mut sum = 0.0f32;
+        for other in everything {
+            if other.start == note.start && other.key == note.key {
+                continue;
+            }
+            let overlap = (other.start + other.length)
+                .min(to)
+                .saturating_sub(other.start.max(from));
+            let fresh = if other.start >= from { 1.0 } else { 0.5 };
+            sum += fresh * overlap as f32 * other.velocity as f32;
+        }
+        sum / ((to - from) as f32 * note.velocity as f32)
+    };
+    let (least, note) = candidates
+        .iter()
+        .filter(|n| n.length as f64 * grid.tick_seconds() >= 0.12)
+        .map(|n| (competition(n), n))
+        .min_by(|a, b| a.0.total_cmp(&b.0))?;
+    if least > MOST_COMPETITION {
+        return None;
+    }
+    let start = grid.tick_time(note.start);
+    let length = (note.length as f64 * grid.tick_seconds() + 0.08).min(1.0);
     Some((stem.slice(start, start + length).fade_out(0.03), note.key))
 }
 
