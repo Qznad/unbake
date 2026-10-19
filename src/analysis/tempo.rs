@@ -138,9 +138,9 @@ fn best_related(curve: &[f32], frame_rate: f64, guess: f64) -> f64 {
     best
 }
 
-// how likely a tempo is before listening, highest at 120 bpm and halving about an octave away
+// how likely a tempo is before listening, highest at 140 bpm and halving about an octave away
 fn preference(bpm: f64) -> f64 {
-    let octaves = (bpm / 120.0).log2();
+    let octaves = (bpm / 140.0).log2();
     (-0.5 * octaves * octaves).exp()
 }
 
