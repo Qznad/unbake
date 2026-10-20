@@ -121,6 +121,7 @@ fn tools() -> Value {
                     "fl_folder": { "type": "string", "description": "windows folder the rebuild will be copied to" },
                     "match_sounds": { "type": "boolean", "description": "tune the synth sounds to the stems, default true" },
                     "simple_chords": { "type": "boolean", "description": "write the chords as plain three-note triads, without the extra notes heard in them, default false" },
+                    "raw_melody": { "type": "boolean", "description": "keep every melody note heard instead of tidying it into one playable line (three octaves, no echoes, ghost notes or overlaps), default false" },
                     "loops": { "type": "boolean", "description": "arrange each part as up to 4 reused 4 bar loops instead of one pattern copying the whole song, default false" }
                 },
                 "required": ["file"]
@@ -194,6 +195,7 @@ fn tools() -> Value {
                     "fl_folder": { "type": "string", "description": "windows folder the rebuild will be copied to" },
                     "match_sounds": { "type": "boolean", "description": "tune the synth sounds to the stems, default true" },
                     "simple_chords": { "type": "boolean", "description": "write the chords as plain three-note triads, without the extra notes heard in them, default false" },
+                    "raw_melody": { "type": "boolean", "description": "keep every melody note heard instead of tidying it into one playable line (three octaves, no echoes, ghost notes or overlaps), default false" },
                     "loops": { "type": "boolean", "description": "arrange each part as up to 4 reused 4 bar loops instead of one pattern copying the whole song, default false" }
                 },
                 "required": ["folder"]
@@ -343,6 +345,7 @@ fn project_options(args: &Value, input: PathBuf) -> rebuild::Options {
         fl_folder: args["fl_folder"].as_str().map(|s| s.to_string()),
         match_sounds: args["match_sounds"].as_bool().unwrap_or(true),
         simple_chords: args["simple_chords"].as_bool().unwrap_or(false),
+        raw_melody: args["raw_melody"].as_bool().unwrap_or(false),
         loops: args["loops"].as_bool().unwrap_or(false),
     }
 }
@@ -386,6 +389,7 @@ fn split(args: &Value) -> Result<Value, String> {
         fl_folder: None,
         match_sounds: false,
         simple_chords: false,
+        raw_melody: false,
         loops: false,
     };
     let dir = optional_path(args, "out").unwrap_or_else(|| rebuild::output_dir(&options));

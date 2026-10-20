@@ -22,6 +22,7 @@ use crate::separate;
 use crate::sounds::{self, SoundFile};
 use crate::synth::{self, Voices};
 use crate::theory;
+use crate::tidy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -38,6 +39,7 @@ pub struct Options {
     pub fl_folder: Option<String>,
     pub match_sounds: bool,
     pub simple_chords: bool,
+    pub raw_melody: bool,
     pub loops: bool,
 }
 
@@ -442,6 +444,11 @@ pub fn build(options: &Options, session: &Session) -> Result<Report, String> {
                 .collect()
         })
         .unwrap_or_default();
+    let melody_notes = if options.raw_melody {
+        melody_notes
+    } else {
+        tidy::melody(&melody_notes)
+    };
     let heard_chords = session.leftover_notes();
     let heard_melody = match chosen {
         Some(c) if !c.from_vocals => melody_notes.clone(),

@@ -25,6 +25,7 @@ mod separate;
 mod sounds;
 mod synth;
 mod theory;
+mod tidy;
 mod tools;
 
 use audio::wav::Wav;
@@ -176,6 +177,11 @@ struct ProjectArgs {
     simple_chords: bool,
     #[arg(
         long,
+        help = "keep every melody note heard, without folding it into three octaves, dropping echoes and ghost notes, or cutting overlaps"
+    )]
+    raw_melody: bool,
+    #[arg(
+        long,
         help = "arrange each part as up to 4 reused 4 bar loops instead of one pattern copying the whole song"
     )]
     loops: bool,
@@ -192,6 +198,7 @@ fn options(file: PathBuf, song: SongArgs, project: ProjectArgs) -> rebuild::Opti
         fl_folder: project.fl_folder,
         match_sounds: !project.no_match,
         simple_chords: project.simple_chords,
+        raw_melody: project.raw_melody,
         loops: project.loops,
     }
 }
@@ -304,6 +311,7 @@ fn run(command: Command) -> Result<(), String> {
                     fl_folder: None,
                     match_sounds: false,
                     simple_chords: false,
+                    raw_melody: false,
                     loops: false,
                 })
             });
@@ -331,6 +339,7 @@ fn run(command: Command) -> Result<(), String> {
                     fl_folder: None,
                     no_match: true,
                     simple_chords: false,
+                    raw_melody: false,
                     loops: false,
                 },
             );
