@@ -126,10 +126,6 @@ pub fn melody(melody: &[Note], heard: &[Note], from_basic_pitch: bool) -> Findin
             ));
         }
         finding.limitations.push(
-            "the melody is the loudest note on each step of the other stem, which can hold several instruments"
-                .to_string(),
-        );
-        finding.limitations.push(
             "Basic Pitch misses some notes in dense mixes, so a missing note is unknown, not silence"
                 .to_string(),
         );

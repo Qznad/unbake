@@ -1,10 +1,10 @@
 use crate::audio::signal::Signal;
 use crate::music::Grid;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 const PHRASE: u32 = 4;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Section {
     pub name: String,
     pub start_bar: u32,

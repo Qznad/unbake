@@ -18,15 +18,17 @@ mod matching;
 mod mcp;
 mod midi;
 mod music;
+mod piano_roll;
 mod rebuild;
 mod report;
 mod separate;
 mod sounds;
 mod synth;
 mod theory;
+mod tools;
 
 use audio::wav::Wav;
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -60,41 +62,60 @@ enum Command {
     )]
     Rebuild {
         file: PathBuf,
+        #[command(flatten)]
+        song: SongArgs,
+        #[command(flatten)]
+        project: ProjectArgs,
+    },
+
+    #[command(
+        about = "listen to a song and save what it hears in the rebuild folder, with melody candidates to choose from"
+    )]
+    Transcribe {
+        file: PathBuf,
+        #[command(flatten)]
+        song: SongArgs,
         #[arg(
-            short,
             long,
-            help = "output folder, also the fl studio project folder [default: <song>]"
-        )]
-        out: Option<PathBuf>,
-        #[arg(long, help = "use the stems in this folder instead of running demucs")]
-        stems: Option<PathBuf>,
-        #[arg(
-            long,
-            help = "an FL Studio project with channels named Kick, Snare, Hat, Bass, Lead and Pad"
-        )]
-        template: Option<PathBuf>,
-        #[arg(
-            long,
-            help = "a folder with your own sounds: kick, snare, hat, bass, lead, pad (.wav, .mp3, ...)"
+            help = "a folder with your own drum sounds, used to find the hits: kick, snare, hat"
         )]
         sounds: Option<PathBuf>,
-        #[arg(
-            long,
-            help = "the windows folder you will copy the output folder to [default: %FLStudioUserData%\\Projects\\unbake\\<output folder name>]"
-        )]
-        fl_folder: Option<String>,
-        #[arg(long, help = "skip tuning the synth sounds to the stems, faster")]
-        no_match: bool,
-        #[arg(
-            long,
-            help = "write the chords as clean triads that follow the key, easier to edit but less exact"
-        )]
-        simple_chords: bool,
-        #[arg(
-            long,
-            help = "arrange each part as up to 4 reused 4 bar loops instead of one pattern copying the whole song"
-        )]
-        loops: bool,
+    },
+
+    #[command(about = "list the melody candidates of a transcribed rebuild folder")]
+    Candidates { folder: PathBuf },
+
+    #[command(about = "choose which melody candidate the project uses")]
+    Choose { folder: PathBuf, candidate: String },
+
+    #[command(
+        about = "list the notes of a part or candidate in some bars: drums, bass, melody, chords or a candidate's name"
+    )]
+    Inspect {
+        folder: PathBuf,
+        name: String,
+        #[arg(long, default_value_t = 1, help = "first bar, counting from 1")]
+        from_bar: u32,
+        #[arg(long, default_value_t = 4, help = "how many bars")]
+        bars: u32,
+    },
+
+    #[command(about = "draw a piano roll png of up to four parts or candidates over each other")]
+    PianoRoll {
+        folder: PathBuf,
+        #[arg(required = true)]
+        names: Vec<String>,
+        #[arg(long, default_value_t = 1, help = "first bar, counting from 1")]
+        from_bar: u32,
+        #[arg(long, default_value_t = 8, help = "how many bars")]
+        bars: u32,
+    },
+
+    #[command(about = "write the fl studio project of a transcribed rebuild folder")]
+    Write {
+        folder: PathBuf,
+        #[command(flatten)]
+        project: ProjectArgs,
     },
 
     #[command(about = "list the version, tempo, channels and patterns of an fl studio project")]
@@ -115,6 +136,122 @@ enum Command {
         #[arg(long, help = "print the checks as json")]
         json: bool,
     },
+}
+
+#[derive(Args)]
+struct SongArgs {
+    #[arg(
+        short,
+        long,
+        help = "output folder, also the fl studio project folder [default: <song>]"
+    )]
+    out: Option<PathBuf>,
+    #[arg(long, help = "use the stems in this folder instead of running demucs")]
+    stems: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct ProjectArgs {
+    #[arg(
+        long,
+        help = "an FL Studio project with channels named Kick, Snare, Hat, Bass, Lead and Pad"
+    )]
+    template: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "a folder with your own sounds: kick, snare, hat, bass, lead, pad (.wav, .mp3, ...)"
+    )]
+    sounds: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "the windows folder you will copy the output folder to [default: %FLStudioUserData%\\Projects\\unbake\\<output folder name>]"
+    )]
+    fl_folder: Option<String>,
+    #[arg(long, help = "skip tuning the synth sounds to the stems, faster")]
+    no_match: bool,
+    #[arg(
+        long,
+        help = "write the chords as clean triads that follow the key, easier to edit but less exact"
+    )]
+    simple_chords: bool,
+    #[arg(
+        long,
+        help = "arrange each part as up to 4 reused 4 bar loops instead of one pattern copying the whole song"
+    )]
+    loops: bool,
+}
+
+// the rebuild options for a song from the command line arguments
+fn options(file: PathBuf, song: SongArgs, project: ProjectArgs) -> rebuild::Options {
+    rebuild::Options {
+        input: file,
+        out: song.out,
+        stems: song.stems,
+        template: project.template,
+        sounds: project.sounds,
+        fl_folder: project.fl_folder,
+        match_sounds: !project.no_match,
+        simple_chords: project.simple_chords,
+        loops: project.loops,
+    }
+}
+
+// prints the melody candidates with their evidence, marking the chosen one
+fn print_candidates(candidates: &[tools::CandidateView]) {
+    println!("Melody candidates:");
+    for c in candidates {
+        let mark = if c.chosen { "*" } else { " " };
+        println!("{} {:<9} {}", mark, c.name, c.description);
+        for line in c.finding.lines() {
+            println!("            {}", line);
+        }
+    }
+}
+
+// prints what a rebuild made: tempo, key, parts, sounds, project and how sure each finding is
+fn print_report(report: &report::Report, folder: &Path) {
+    println!("Tempo:       {} bpm", report.tempo_bpm);
+    println!(
+        "Key:         {} (same notes as {})",
+        report.key, report.relative_key
+    );
+    println!("Bars:        {}", report.bars);
+    let sections: Vec<String> = report
+        .sections
+        .iter()
+        .map(|s| format!("{} ({} bars)", s.name, s.bars))
+        .collect();
+    println!("Sections:    {}", sections.join(", "));
+    println!("Chords:      {}", report.chords.join(" "));
+    for part in &report.parts {
+        let scores: Vec<String> = part
+            .scores
+            .iter()
+            .map(|s| format!("{} {:.2}", s.dimension, s.value))
+            .collect();
+        println!(
+            "{:<12} {} notes ({}), {}",
+            format!("{}:", part.part),
+            part.notes,
+            part.detail,
+            scores.join(", ")
+        );
+    }
+    for m in &report.sound_matching {
+        println!(
+            "Sounds:      {} stem similarity {:.2} -> {:.2} after {} renders",
+            m.stem, m.score_before, m.score_after, m.renders
+        );
+    }
+    for sound in &report.sounds {
+        println!("Sound:       {}", sound);
+    }
+    println!("FL project:  {}", report.flp);
+    for warning in &report.warnings {
+        println!("Warning:     {}", warning);
+    }
+    print_findings(&report.findings);
+    println!("Report:      {}", folder.join("report.html").display());
 }
 
 // prints how sure each finding is, with what else fits, what is unknown and what the method can't do
@@ -176,72 +313,99 @@ fn run(command: Command) -> Result<(), String> {
         }
         Command::Rebuild {
             file,
-            out,
-            stems,
-            template,
-            sounds,
-            fl_folder,
-            no_match,
-            simple_chords,
-            loops,
+            song,
+            project,
         } => {
-            let options = rebuild::Options {
-                input: file,
-                out,
-                stems,
-                template,
-                sounds,
-                fl_folder,
-                match_sounds: !no_match,
-                simple_chords,
-                loops,
-            };
+            let options = options(file, song, project);
             let report = rebuild::run(&options)?;
-            println!("Tempo:       {} bpm", report.tempo_bpm);
-            println!(
-                "Key:         {} (same notes as {})",
-                report.key, report.relative_key
+            print_report(&report, &rebuild::output_dir(&options));
+            Ok(())
+        }
+        Command::Transcribe { file, song, sounds } => {
+            let mut options = options(
+                file,
+                song,
+                ProjectArgs {
+                    template: None,
+                    sounds,
+                    fl_folder: None,
+                    no_match: true,
+                    simple_chords: false,
+                    loops: false,
+                },
             );
-            println!("Bars:        {}", report.bars);
-            let sections: Vec<String> = report
-                .sections
-                .iter()
-                .map(|s| format!("{} ({} bars)", s.name, s.bars))
-                .collect();
-            println!("Sections:    {}", sections.join(", "));
-            println!("Chords:      {}", report.chords.join(" "));
-            for part in &report.parts {
-                let scores: Vec<String> = part
-                    .scores
-                    .iter()
-                    .map(|s| format!("{} {:.2}", s.dimension, s.value))
-                    .collect();
+            let folder = rebuild::output_dir(&options);
+            options.out = Some(folder.clone());
+            let session = rebuild::transcribe(&options)?;
+            println!(
+                "Saved:       {}",
+                folder.join("extras/session.json").display()
+            );
+            print_findings(&session.findings);
+            print_candidates(&tools::candidates(&folder)?);
+            Ok(())
+        }
+        Command::Candidates { folder } => {
+            print_candidates(&tools::candidates(&folder)?);
+            Ok(())
+        }
+        Command::Choose { folder, candidate } => {
+            rebuild::choose_melody(&folder, &candidate)?;
+            println!(
+                "The melody is now {}, run write to make the project",
+                candidate
+            );
+            Ok(())
+        }
+        Command::Inspect {
+            folder,
+            name,
+            from_bar,
+            bars,
+        } => {
+            let view = tools::inspect(&folder, &name, from_bar, bars)?;
+            println!(
+                "{}: {} notes in bars {} to {}, {} in the song",
+                view.name,
+                view.notes.len(),
+                view.from_bar,
+                view.from_bar + view.bars - 1,
+                view.notes_in_song
+            );
+            for n in &view.notes {
                 println!(
-                    "{:<12} {} notes ({}), {}",
-                    format!("{}:", part.part),
-                    part.notes,
-                    part.detail,
-                    scores.join(", ")
+                    "  bar {:>3} step {:>2}  {:<4} {:>2} steps  velocity {}",
+                    n.bar, n.step, n.note, n.steps, n.velocity
                 );
             }
-            for m in &report.sound_matching {
-                println!(
-                    "Sounds:      {} stem similarity {:.2} -> {:.2} after {} renders",
-                    m.stem, m.score_before, m.score_after, m.renders
-                );
+            if let Some(finding) = &view.finding {
+                print_findings(std::slice::from_ref(finding));
             }
-            for sound in &report.sounds {
-                println!("Sound:       {}", sound);
-            }
-            println!("FL project:  {}", report.flp);
-            for warning in &report.warnings {
-                println!("Warning:     {}", warning);
-            }
-            print_findings(&report.findings);
-            println!(
-                "Report:      {}",
-                rebuild::output_dir(&options).join("report.html").display()
+            Ok(())
+        }
+        Command::PianoRoll {
+            folder,
+            names,
+            from_bar,
+            bars,
+        } => {
+            let roll = tools::piano_roll(&folder, &names, from_bar, bars)?;
+            println!("Saved:       {}", roll.path);
+            println!("Colours:     {}", roll.legend.join(", "));
+            println!("Scale:       {}", roll.scale);
+            Ok(())
+        }
+        Command::Write { folder, project } => {
+            let options = options(
+                folder.clone(),
+                SongArgs {
+                    out: Some(folder.clone()),
+                    stems: None,
+                },
+                project,
             );
+            let report = tools::write(&folder, options)?;
+            print_report(&report, &folder);
             Ok(())
         }
         Command::FlpInfo { file } => {

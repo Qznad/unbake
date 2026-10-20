@@ -1,6 +1,8 @@
 use crate::analysis::chords::{self, ChordSpan};
 use crate::analysis::drums::Hit;
+use crate::analysis::key::Key;
 use crate::analysis::sections;
+use crate::analysis::sections::Section;
 use crate::analysis::spectrum::{HARMONIC_FACTOR, HOP, Spectrogram};
 use crate::analysis::{chroma, drums, key, notes, onsets, pitch, tempo};
 use crate::arrange::{self, Arrangement, Lane};
@@ -20,10 +22,12 @@ use crate::separate;
 use crate::sounds::{self, SoundFile};
 use crate::synth::{self, Voices};
 use crate::theory;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 const BUILT_IN_TEMPLATE: &[u8] = include_bytes!("../assets/template.flp");
+const SESSION_FILE: &str = "extras/session.json";
 
 pub struct Options {
     pub input: PathBuf,
@@ -75,8 +79,105 @@ pub fn analyze_song(file: &Path) -> Result<SongInfo, String> {
     })
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Candidate {
+    pub name: String,
+    pub description: String,
+    pub from_vocals: bool,
+    pub notes: Vec<Note>,
+    pub finding: Finding,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Session {
+    pub source: String,
+    pub duration_seconds: f64,
+    pub sample_rate: u32,
+    pub grid: Grid,
+    pub key: Key,
+    pub bars: u32,
+    pub sections: Vec<Section>,
+    pub findings: Vec<Finding>,
+    pub warnings: Vec<String>,
+    pub drum_hits: Vec<Hit>,
+    pub drums: Vec<Note>,
+    pub bass: Vec<Note>,
+    pub other: Vec<Note>,
+    pub chord_spans: Vec<ChordSpan>,
+    pub candidates: Vec<Candidate>,
+    pub melody: String,
+}
+
+impl Session {
+    // the melody candidate chosen now, or the first one when that name is gone
+    pub fn chosen(&self) -> Option<&Candidate> {
+        self.candidates
+            .iter()
+            .find(|c| c.name == self.melody)
+            .or(self.candidates.first())
+    }
+
+    // the other stem's notes that are not in the chosen melody, which the chords part plays
+    pub fn chord_notes(&self) -> Vec<Note> {
+        let taken: HashSet<(u32, u8)> = match self.chosen() {
+            Some(c) if !c.from_vocals => c.notes.iter().map(|n| (n.start, n.key)).collect(),
+            _ => HashSet::new(),
+        };
+        self.other
+            .iter()
+            .filter(|n| !taken.contains(&(n.start, n.key)))
+            .map(|n| Note {
+                part: Part::Chords,
+                ..*n
+            })
+            .collect()
+    }
+}
+
+// the session saved in a rebuild folder, everything heard so the project can be written again without listening again
+pub fn load_session(folder: &Path) -> Result<Session, String> {
+    let path = folder.join(SESSION_FILE);
+    let text = std::fs::read_to_string(&path).map_err(|e| {
+        format!(
+            "can't read {}, run transcribe on the song first ({})",
+            path.display(),
+            e
+        )
+    })?;
+    serde_json::from_str(&text).map_err(|e| format!("{} is broken: {}", path.display(), e))
+}
+
+// saves the session into a rebuild folder
+pub fn save_session(folder: &Path, session: &Session) -> Result<(), String> {
+    let path = folder.join(SESSION_FILE);
+    let text = serde_json::to_string(session).map_err(|e| e.to_string())?;
+    std::fs::write(&path, text).map_err(|e| format!("can't write {}: {}", path.display(), e))
+}
+
+// picks which melody candidate the project uses and saves that choice
+pub fn choose_melody(folder: &Path, name: &str) -> Result<Session, String> {
+    let mut session = load_session(folder)?;
+    if !session.candidates.iter().any(|c| c.name == name) {
+        let names: Vec<&str> = session.candidates.iter().map(|c| c.name.as_str()).collect();
+        return Err(format!(
+            "no melody candidate called {}, the candidates are {}",
+            name,
+            names.join(", ")
+        ));
+    }
+    session.melody = name.to_string();
+    save_session(folder, &session)?;
+    Ok(session)
+}
+
 // rebuilds a song into a folder fl studio can open as it is, with midi, previews and the rest in extras
 pub fn run(options: &Options) -> Result<Report, String> {
+    let session = transcribe(options)?;
+    build(options, &session)
+}
+
+// listens to a song and saves everything it hears as a session in the rebuild folder, ready to be written as a project
+pub fn transcribe(options: &Options) -> Result<Session, String> {
     let out = output_dir(options);
     let extras = out.join("extras");
     for dir in [&out, &extras.join("midi"), &extras.join("render")] {
@@ -110,6 +211,8 @@ pub fn run(options: &Options) -> Result<Report, String> {
     let mut harmony = stems.bass.clone();
     harmony.mix_in(&stems.other);
     let (_, grid, tempo_guesses) = tempo::analyze(rhythm, &harmony);
+    let vocal_level = loudness::lufs(&stems.vocals);
+    let sung = vocal_level > -45.0 && vocal_level > loudness::lufs(&stems.other) - 20.0;
     let keys = key::ranked(&chroma::chromagram(&Spectrogram::harmonic(
         &harmony.normalized(),
     )));
@@ -121,29 +224,26 @@ pub fn run(options: &Options) -> Result<Report, String> {
         &grid,
         bars,
     );
-    let markers: Vec<Marker> = sections
-        .iter()
-        .map(|s| Marker {
-            tick: s.start_bar * BAR,
-            name: s.name.clone(),
-        })
-        .collect();
 
     progress("transcribing drums, bass, melody and chords at the same time");
     let note_dir = extras.join("basic_pitch");
     let bass_path = out.join(separate::stem_file("bass"));
     let other_path = out.join(separate::stem_file("other"));
-    let ((drum_hits, drum_notes), heard_bass, heard_other, chord_spans) =
+    let vocals_path = out.join(separate::stem_file("vocals"));
+    let ((drum_hits, drum_notes), heard_bass, heard_other, heard_vocals, chord_spans) =
         std::thread::scope(|scope| {
             let drums =
                 scope.spawn(|| transcribe_drums(&stems.drums, &grid, options.sounds.as_deref()));
             let bass = scope.spawn(|| basic_pitch::transcribe(&bass_path, &note_dir));
             let other = scope.spawn(|| basic_pitch::transcribe(&other_path, &note_dir));
+            let vocals =
+                scope.spawn(|| sung.then(|| basic_pitch::transcribe(&vocals_path, &note_dir)));
             let chords = scope.spawn(|| transcribe_chords(&stems.other, &stems.bass, &grid, bars));
             (
                 drums.join().expect("drum transcription crashed"),
                 bass.join().expect("bass transcription crashed"),
                 other.join().expect("melody transcription crashed"),
+                vocals.join().expect("vocal transcription crashed"),
                 chords.join().expect("chord detection crashed"),
             )
         });
@@ -156,17 +256,31 @@ pub fn run(options: &Options) -> Result<Report, String> {
         }
         Err(e) => {
             warnings.push(format!("{}, so bass used the built-in pitch tracker", e));
-            let line = transcribe(&stems.bass, &grid, Part::Bass, 30.0, 400.0, 0.6);
+            let line = track_pitch(&stems.bass, &grid, Part::Bass, 30.0, 400.0, 0.6);
             (line.clone(), line)
         }
     };
-    let other_from_basic_pitch = heard_other.is_ok();
-    let (melody_notes, heard_chords, chord_spans, other_heard) = match heard_other {
+    let mut candidates = Vec::new();
+    let (other, chord_spans) = match heard_other {
         Ok(events) => {
             let heard = basic_pitch::to_notes(&events, &grid, Part::Melody);
-            let (melody, rest) = basic_pitch::split_lead(&heard);
             let progression = theory::progression(&heard, &bass_notes, &key, bars);
-            (melody, rest, progression, heard)
+            let (loudest, _) = basic_pitch::split_lead(&heard);
+            candidates.push(candidate(
+                "loudest",
+                "the loudest note starting on each step of the other stem",
+                false,
+                loudest,
+                &heard,
+            ));
+            candidates.push(candidate(
+                "highest",
+                "the highest note starting on each step of the other stem, leaving out held block chords",
+                false,
+                basic_pitch::highest_line(&heard),
+                &heard,
+            ));
+            (heard, progression)
         }
         Err(e) => {
             warnings.push(format!(
@@ -174,29 +288,174 @@ pub fn run(options: &Options) -> Result<Report, String> {
                 e
             ));
             let melody = transcribe_melody(&stems.other, &grid);
-            let chords = chords::to_notes(&chord_spans);
             let mut heard = melody.clone();
-            heard.extend_from_slice(&chords);
-            (melody, chords, chord_spans, heard)
+            heard.extend_from_slice(&chords::to_notes(&chord_spans));
+            let mut tracked = candidate(
+                "tracker",
+                "the built-in melody tracker's line, because Basic Pitch could not run",
+                false,
+                melody,
+                &heard,
+            );
+            tracked.finding = findings::melody(&tracked.notes, &heard, false);
+            tracked.finding.name = "melody (tracker)".to_string();
+            candidates.push(tracked);
+            (heard, chord_spans)
         }
     };
-    let findings = vec![
-        findings::tempo(&tempo_guesses),
-        findings::key(&keys),
-        findings::drums(&drum_hits),
-        findings::bass(&bass_notes, &bass_heard, bass_from_basic_pitch),
-        findings::melody(&melody_notes, &other_heard, other_from_basic_pitch),
-        findings::chords(&chord_spans, options.simple_chords),
-    ];
-    let heard_melody = melody_notes.clone();
+    match heard_vocals {
+        Some(Ok(events)) => {
+            let sung_notes = basic_pitch::to_notes(&events, &grid, Part::Melody);
+            let (line, _) = basic_pitch::split_lead(&sung_notes);
+            candidates.push(candidate(
+                "vocals",
+                "the loudest sung note on each step of the vocals stem, often the song's real melody",
+                true,
+                line,
+                &sung_notes,
+            ));
+        }
+        Some(Err(e)) => warnings.push(format!("{}, so the vocals give no melody candidate", e)),
+        None => {}
+    }
+    compare_candidates(&mut candidates);
+
+    let session = Session {
+        source: options.input.display().to_string(),
+        duration_seconds: mix.duration(),
+        sample_rate: mix.sample_rate,
+        grid,
+        key,
+        bars,
+        sections,
+        findings: vec![
+            findings::tempo(&tempo_guesses),
+            findings::key(&keys),
+            findings::drums(&drum_hits),
+            findings::bass(&bass_notes, &bass_heard, bass_from_basic_pitch),
+        ],
+        warnings,
+        drum_hits,
+        drums: drum_notes,
+        bass: bass_notes,
+        other,
+        chord_spans,
+        melody: candidates
+            .first()
+            .map(|c| c.name.clone())
+            .unwrap_or_default(),
+        candidates,
+    };
+    save_session(&out, &session)?;
+    Ok(session)
+}
+
+// one melody candidate with its finding, named after how it was picked
+fn candidate(
+    name: &str,
+    description: &str,
+    from_vocals: bool,
+    notes: Vec<Note>,
+    heard: &[Note],
+) -> Candidate {
+    let mut finding = findings::melody(&notes, heard, true);
+    finding.name = format!("melody ({})", name);
+    if name == "highest" {
+        finding.confidence = None;
+    }
+    if !from_vocals {
+        finding.limitations.insert(
+            0,
+            "the other stem can hold several instruments, so one line can jump between them"
+                .to_string(),
+        );
+    }
+    Candidate {
+        name: name.to_string(),
+        description: description.to_string(),
+        from_vocals,
+        notes,
+        finding,
+    }
+}
+
+// adds to each candidate after the first how many of its notes the first one also has
+fn compare_candidates(candidates: &mut [Candidate]) {
+    let Some(first) = candidates.first() else {
+        return;
+    };
+    let base: HashSet<(u32, u8)> = first.notes.iter().map(|n| (n.start, n.key)).collect();
+    let first_name = first.name.clone();
+    for c in candidates.iter_mut().skip(1) {
+        let shared = c
+            .notes
+            .iter()
+            .filter(|n| base.contains(&(n.start, n.key)))
+            .count();
+        let share = shared as f64 / c.notes.len().max(1) as f64;
+        c.description = format!(
+            "{}, sharing {:.0}% of its notes with {}",
+            c.description,
+            share * 100.0,
+            first_name
+        );
+    }
+}
+
+// writes the fl project, midi, sounds, previews and report from a session, using the melody chosen in it
+pub fn build(options: &Options, session: &Session) -> Result<Report, String> {
+    let out = output_dir(options);
+    let extras = out.join("extras");
+    for dir in [&out, &extras.join("midi"), &extras.join("render")] {
+        create_dir(dir)?;
+    }
+    let stems = load_stems(&out)?;
+    let grid = session.grid;
+    let key = session.key;
+    let bars = session.bars;
+    let duration = session.duration_seconds;
+    let markers: Vec<Marker> = session
+        .sections
+        .iter()
+        .map(|s| Marker {
+            tick: s.start_bar * BAR,
+            name: s.name.clone(),
+        })
+        .collect();
+    let mut warnings = session.warnings.clone();
+    let drum_hits = &session.drum_hits;
+    let chord_spans = &session.chord_spans;
+    let chosen = session.chosen();
+    let melody_notes: Vec<Note> = chosen
+        .map(|c| {
+            c.notes
+                .iter()
+                .map(|n| Note {
+                    part: Part::Melody,
+                    ..*n
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let heard_chords = session.chord_notes();
+    let heard_melody = match chosen {
+        Some(c) if !c.from_vocals => melody_notes.clone(),
+        _ => Vec::new(),
+    };
     let chord_notes = if options.simple_chords {
-        theory::voice(&chord_spans)
+        theory::voice(chord_spans)
     } else {
         heard_chords.clone()
     };
+    let mut findings = session.findings.clone();
+    if let Some(c) = chosen {
+        findings.push(c.finding.clone());
+    }
+    findings.push(findings::chords(chord_spans, options.simple_chords));
 
     progress("arranging the parts into patterns");
-    let mut bass_notes = bass_notes;
+    let drum_notes = session.drums.clone();
+    let mut bass_notes = session.bass.clone();
     notes::fold_octaves(&mut bass_notes, 36);
     let names = ["drums", "bass", "melody", "chords"];
     let lanes: Vec<Lane> = names
@@ -288,7 +547,7 @@ pub fn run(options: &Options) -> Result<Report, String> {
         &stems.drums,
         &stems.bass,
         &stems.other,
-        &drum_hits,
+        drum_hits,
         &bass_notes,
         &heard_melody,
         &heard_chords,
@@ -305,13 +564,13 @@ pub fn run(options: &Options) -> Result<Report, String> {
         &grid,
         &markers,
         &sounds,
-        mix.duration(),
+        duration,
         &mut warnings,
     )?;
 
     progress("rendering and comparing each part");
     let measured_on = format!("bars 1 to {}", bars);
-    let mut preview = Signal::silence(mix.duration(), mix.sample_rate);
+    let mut preview = Signal::silence(duration, session.sample_rate);
     let part_reports = vec![
         rebuild_part(
             ("drums", "drums"),
@@ -350,14 +609,14 @@ pub fn run(options: &Options) -> Result<Report, String> {
     save(&preview, &extras.join("render/mix.wav"))?;
 
     let report = Report {
-        source: options.input.display().to_string(),
-        duration_seconds: round(mix.duration(), 2),
+        source: session.source.clone(),
+        duration_seconds: round(duration, 2),
         tempo_bpm: grid.bpm,
         key: key.name(),
         relative_key: key.relative().name(),
         first_bar_seconds: round(grid.origin, 3),
         bars,
-        sections,
+        sections: session.sections.clone(),
         chords: chord_spans.iter().map(|c| c.chord.name()).collect(),
         parts: part_reports,
         sound_matching,
@@ -402,7 +661,7 @@ fn transcribe_drums(stem: &Signal, grid: &Grid, user_dir: Option<&Path>) -> (Vec
 }
 
 // follows the pitch of a stem and turns it into notes on the grid
-fn transcribe(
+fn track_pitch(
     stem: &Signal,
     grid: &Grid,
     part: Part,

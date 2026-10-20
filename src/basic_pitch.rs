@@ -121,6 +121,23 @@ pub fn block_chords(notes: &[Note]) -> Vec<bool> {
         .collect()
 }
 
+// keeps the highest note starting on each step, leaving out held block chords, as a melody line
+pub fn highest_line(notes: &[Note]) -> Vec<Note> {
+    let block = block_chords(notes);
+    let mut line: Vec<Note> = notes
+        .iter()
+        .zip(&block)
+        .filter(|(_, b)| !**b)
+        .map(|(n, _)| Note {
+            part: Part::Melody,
+            ..*n
+        })
+        .collect();
+    line.sort_by_key(|n| (n.start, std::cmp::Reverse(n.key)));
+    line.dedup_by_key(|n| n.start);
+    line
+}
+
 // splits notes into the melody, the loudest one starting on each step, and chords, the rest and any block chords
 pub fn split_lead(notes: &[Note]) -> (Vec<Note>, Vec<Note>) {
     let block = block_chords(notes);

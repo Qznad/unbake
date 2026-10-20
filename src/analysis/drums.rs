@@ -3,8 +3,9 @@ use crate::analysis::spectrum::Spectrogram;
 use crate::audio::math;
 use crate::audio::signal::Signal;
 use crate::music::{Grid, Note, Part, STEP};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Hit {
     pub time: f64,
     pub part: Part,

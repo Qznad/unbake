@@ -1,14 +1,15 @@
 use crate::analysis::chroma::{self, Chroma};
 use crate::audio::math;
 use crate::music::{BAR, Grid, NOTE_NAMES, Note, Part, STEP};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Chord {
     pub root: usize,
     pub minor: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct ChordSpan {
     pub chord: Chord,
     pub start: u32,
