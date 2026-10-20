@@ -8,6 +8,8 @@ use crate::audio::signal::Signal;
 use crate::audio::{convert, loudness, math, wav};
 use crate::basic_pitch;
 use crate::compare;
+use crate::evidence::Finding;
+use crate::findings;
 use crate::flp;
 use crate::flp::build::{Extras, Sound, Stem};
 use crate::matching;
@@ -50,16 +52,18 @@ pub struct SongInfo {
     pub bars: u32,
     pub key: String,
     pub relative_key: String,
+    pub findings: Vec<Finding>,
 }
 
 // finds the tempo, bars and key of a song file from the full mix, without separating it
 pub fn analyze_song(file: &Path) -> Result<SongInfo, String> {
     let wav = convert::load(file, &std::env::temp_dir().join("unbake"))?;
     let mix = Signal::from_wav(&wav);
-    let (_, grid) = tempo::analyze(&mix, &mix);
-    let key = key::detect(&chroma::chromagram(&Spectrogram::harmonic(
+    let (_, grid, guesses) = tempo::analyze(&mix, &mix);
+    let keys = key::ranked(&chroma::chromagram(&Spectrogram::harmonic(
         &mix.normalized(),
     )));
+    let key = keys[0];
     Ok(SongInfo {
         duration_seconds: round(mix.duration(), 2),
         tempo_bpm: grid.bpm,
@@ -67,6 +71,7 @@ pub fn analyze_song(file: &Path) -> Result<SongInfo, String> {
         bars: grid.bar_count(mix.duration()),
         key: key.name(),
         relative_key: key.relative().name(),
+        findings: vec![findings::tempo(&guesses), findings::key(&keys)],
     })
 }
 
@@ -104,10 +109,11 @@ pub fn run(options: &Options) -> Result<Report, String> {
     };
     let mut harmony = stems.bass.clone();
     harmony.mix_in(&stems.other);
-    let (_, grid) = tempo::analyze(rhythm, &harmony);
-    let key = key::detect(&chroma::chromagram(&Spectrogram::harmonic(
+    let (_, grid, tempo_guesses) = tempo::analyze(rhythm, &harmony);
+    let keys = key::ranked(&chroma::chromagram(&Spectrogram::harmonic(
         &harmony.normalized(),
     )));
+    let key = keys[0];
     let bars = grid.bar_count(mix.duration());
     let sections = sections::detect(
         &stems.drums,
@@ -142,32 +148,46 @@ pub fn run(options: &Options) -> Result<Report, String> {
             )
         });
     let mut warnings = Vec::new();
-    let bass_notes = match heard_bass {
-        Ok(events) => basic_pitch::lowest_line(&basic_pitch::to_notes(&events, &grid, Part::Bass)),
+    let bass_from_basic_pitch = heard_bass.is_ok();
+    let (bass_notes, bass_heard) = match heard_bass {
+        Ok(events) => {
+            let heard = basic_pitch::to_notes(&events, &grid, Part::Bass);
+            (basic_pitch::lowest_line(&heard), heard)
+        }
         Err(e) => {
             warnings.push(format!("{}, so bass used the built-in pitch tracker", e));
-            transcribe(&stems.bass, &grid, Part::Bass, 30.0, 400.0, 0.6)
+            let line = transcribe(&stems.bass, &grid, Part::Bass, 30.0, 400.0, 0.6);
+            (line.clone(), line)
         }
     };
-    let (melody_notes, heard_chords, chord_spans) = match heard_other {
+    let other_from_basic_pitch = heard_other.is_ok();
+    let (melody_notes, heard_chords, chord_spans, other_heard) = match heard_other {
         Ok(events) => {
             let heard = basic_pitch::to_notes(&events, &grid, Part::Melody);
             let (melody, rest) = basic_pitch::split_lead(&heard);
             let progression = theory::progression(&heard, &bass_notes, &key, bars);
-            (melody, rest, progression)
+            (melody, rest, progression, heard)
         }
         Err(e) => {
             warnings.push(format!(
                 "{}, so melody and chords used the built-in trackers",
                 e
             ));
-            (
-                transcribe_melody(&stems.other, &grid),
-                chords::to_notes(&chord_spans),
-                chord_spans,
-            )
+            let melody = transcribe_melody(&stems.other, &grid);
+            let chords = chords::to_notes(&chord_spans);
+            let mut heard = melody.clone();
+            heard.extend_from_slice(&chords);
+            (melody, chords, chord_spans, heard)
         }
     };
+    let findings = vec![
+        findings::tempo(&tempo_guesses),
+        findings::key(&keys),
+        findings::drums(&drum_hits),
+        findings::bass(&bass_notes, &bass_heard, bass_from_basic_pitch),
+        findings::melody(&melody_notes, &other_heard, other_from_basic_pitch),
+        findings::chords(&chord_spans, options.simple_chords),
+    ];
     let heard_melody = melody_notes.clone();
     let chord_notes = if options.simple_chords {
         theory::voice(&chord_spans)
@@ -349,11 +369,8 @@ pub fn run(options: &Options) -> Result<Report, String> {
         flp: flp_status,
         warnings,
         files: written_files(&out),
+        findings,
         limitations: vec![
-            "drums are sorted into kick, snare and hat only, and a hat under a snare is not found"
-                .to_string(),
-            "bass and melody are transcribed one note at a time".to_string(),
-            "chords are major and minor triads, one per half bar at most".to_string(),
             "section names are guesses from which stems play and how loud".to_string(),
             "vocals are left as audio".to_string(),
             "the rebuild preview uses a small built in synth, not your FL Studio sounds"

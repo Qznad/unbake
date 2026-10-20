@@ -10,6 +10,8 @@ mod audio;
 mod basic_pitch;
 mod compare;
 mod eval;
+mod evidence;
+mod findings;
 mod flp;
 mod matching;
 mod mcp;
@@ -106,6 +108,16 @@ enum Command {
     Mcp,
 }
 
+// prints how sure each finding is, with what else fits, what is unknown and what the method can't do
+fn print_findings(findings: &[evidence::Finding]) {
+    println!("How sure:");
+    for finding in findings {
+        for line in finding.lines() {
+            println!("  {}", line);
+        }
+    }
+}
+
 // runs the program and prints any error
 fn main() {
     let cli = Cli::parse();
@@ -132,6 +144,7 @@ fn run(command: Command) -> Result<(), String> {
             );
             println!("First bar:   {:.3} s", info.first_bar_seconds);
             println!("Bars:        {}", info.bars);
+            print_findings(&info.findings);
             Ok(())
         }
         Command::Split { file, out } => {
@@ -215,6 +228,7 @@ fn run(command: Command) -> Result<(), String> {
             for warning in &report.warnings {
                 println!("Warning:     {}", warning);
             }
+            print_findings(&report.findings);
             println!(
                 "Report:      {}",
                 rebuild::output_dir(&options).join("report.html").display()

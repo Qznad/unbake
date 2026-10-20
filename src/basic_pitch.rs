@@ -102,28 +102,35 @@ pub fn lowest_line(notes: &[Note]) -> Vec<Note> {
     line
 }
 
-// splits notes into the melody, the loudest one starting on each step, and chords, the rest and any block chords
-pub fn split_lead(notes: &[Note]) -> (Vec<Note>, Vec<Note>) {
-    let together = |i: usize| {
-        notes
-            .iter()
-            .enumerate()
-            .filter(move |&(j, other)| j != i && other.start == notes[i].start)
-    };
-    let block: Vec<bool> = (0..notes.len())
+// the other notes starting on the same step as one note, with their positions
+fn together(notes: &[Note], i: usize) -> impl Iterator<Item = (usize, &Note)> {
+    notes
+        .iter()
+        .enumerate()
+        .filter(move |&(j, other)| j != i && other.start == notes[i].start)
+}
+
+// for every note, whether it belongs to a held block chord, two or more others starting and ending with it
+pub fn block_chords(notes: &[Note]) -> Vec<bool> {
+    (0..notes.len())
         .map(|i| {
             let end = notes[i].start + notes[i].length;
-            together(i)
+            together(notes, i)
                 .filter(|(_, other)| (other.start + other.length).abs_diff(end) <= STEP)
                 .count()
                 >= 2
         })
-        .collect();
+        .collect()
+}
+
+// splits notes into the melody, the loudest one starting on each step, and chords, the rest and any block chords
+pub fn split_lead(notes: &[Note]) -> (Vec<Note>, Vec<Note>) {
+    let block = block_chords(notes);
 
     let mut melody: Vec<Note> = Vec::new();
     let mut chords = Vec::new();
     for (i, note) in notes.iter().enumerate() {
-        let topped = together(i)
+        let topped = together(notes, i)
             .any(|(j, other)| !block[j] && (other.velocity, other.key) > (note.velocity, note.key));
         if block[i] || topped {
             chords.push(Note {

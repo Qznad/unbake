@@ -6,6 +6,12 @@ use crate::audio::signal::Signal;
 use crate::music::Grid;
 
 #[derive(Clone, Copy, Debug)]
+pub struct Guess {
+    pub bpm: f64,
+    pub score: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Tempo {
     pub bpm: f64,
     pub first_beat: f64,
@@ -18,21 +24,21 @@ impl Tempo {
     }
 }
 
-// finds the tempo and bar grid of a song, from a signal with clear hits and one with the harmony
-pub fn analyze(rhythm: &Signal, harmony: &Signal) -> (Tempo, Grid) {
+// finds the tempo and bar grid of a song, from a signal with clear hits and one with the harmony, with the tempos it passed over
+pub fn analyze(rhythm: &Signal, harmony: &Signal) -> (Tempo, Grid, Vec<Guess>) {
     let spec = Spectrogram::standard(&rhythm.normalized());
     let novelty = onsets::novelty(&spec, 30.0, 16000.0);
     let low = onsets::novelty(&spec, 30.0, 150.0);
-    let tempo = estimate(&novelty, spec.frame_rate());
+    let (tempo, others) = estimate(&novelty, spec.frame_rate());
 
     let harmonic = Spectrogram::harmonic(&harmony.normalized());
     let chroma = chroma::chromagram(&harmonic);
     let grid = grid(&tempo, &low, &chroma, spec.frame_rate(), rhythm.duration());
-    (tempo, grid)
+    (tempo, grid, others)
 }
 
-// finds the tempo and where the beats fall from an onset novelty curve
-pub fn estimate(novelty: &[f32], frame_rate: f64) -> Tempo {
+// finds the tempo and where the beats fall from an onset novelty curve, with how well related tempos fit next to it
+pub fn estimate(novelty: &[f32], frame_rate: f64) -> (Tempo, Vec<Guess>) {
     let curve = prepare(novelty);
     let coarse = best_related(&curve, frame_rate, autocorrelation_bpm(&curve, frame_rate));
 
@@ -50,10 +56,23 @@ pub fn estimate(novelty: &[f32], frame_rate: f64) -> Tempo {
 
     let bpm = snap(best_bpm);
     let (_, phase) = comb(&curve, frame_rate * 60.0 / bpm);
-    Tempo {
+    let fit = |bpm: f64| comb(&curve, frame_rate * 60.0 / bpm).0 * preference(bpm);
+    let chosen = fit(bpm).max(1e-12);
+    let mut others = vec![Guess { bpm, score: 1.0 }];
+    for ratio in [2.0, 0.5, 1.5, 2.0 / 3.0] {
+        let other = snap(bpm * ratio);
+        if (30.0..=400.0).contains(&other) {
+            others.push(Guess {
+                bpm: other,
+                score: fit(other) / chosen,
+            });
+        }
+    }
+    let tempo = Tempo {
         bpm,
         first_beat: phase / frame_rate,
-    }
+    };
+    (tempo, others)
 }
 
 // keeps only the parts of the curve that stick out above their surroundings, then smooths it
@@ -252,8 +271,10 @@ mod tests {
             curve[(t * frame_rate).round() as usize] = 1.0;
             t += 60.0 / 128.0;
         }
-        let tempo = estimate(&curve, frame_rate);
+        let (tempo, guesses) = estimate(&curve, frame_rate);
         assert_eq!(tempo.bpm, 128.0);
+        assert_eq!(guesses[0].bpm, 128.0);
+        assert!(guesses[1..].iter().all(|g| g.score < 1.0));
         assert!((tempo.first_beat - 0.25).abs() < 0.03);
     }
 }

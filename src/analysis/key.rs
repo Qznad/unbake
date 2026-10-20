@@ -38,8 +38,8 @@ impl Key {
     }
 }
 
-// finds the key whose major or minor profile best matches how often each note sounds
-pub fn detect(chroma: &[Chroma]) -> Key {
+// all 24 major and minor keys, best match first, each with how well its profile matches the notes heard
+pub fn ranked(chroma: &[Chroma]) -> Vec<Key> {
     let mut total = [0.0f32; 12];
     for frame in chroma {
         for pc in 0..12 {
@@ -47,11 +47,7 @@ pub fn detect(chroma: &[Chroma]) -> Key {
         }
     }
 
-    let mut best = Key {
-        tonic: 0,
-        minor: false,
-        confidence: f32::MIN,
-    };
+    let mut keys = Vec::with_capacity(24);
     for tonic in 0..12 {
         for minor in [false, true] {
             let profile = if minor { MINOR } else { MAJOR };
@@ -59,17 +55,15 @@ pub fn detect(chroma: &[Chroma]) -> Key {
             for pc in 0..12 {
                 rotated[(pc + tonic) % 12] = profile[pc];
             }
-            let score = math::correlation(&total, &rotated);
-            if score > best.confidence {
-                best = Key {
-                    tonic,
-                    minor,
-                    confidence: score,
-                };
-            }
+            keys.push(Key {
+                tonic,
+                minor,
+                confidence: math::correlation(&total, &rotated),
+            });
         }
     }
-    best
+    keys.sort_by(|a, b| b.confidence.total_cmp(&a.confidence));
+    keys
 }
 
 #[cfg(test)]
@@ -91,8 +85,9 @@ mod tests {
         ] {
             chroma[pc] = weight;
         }
-        let key = detect(&[chroma]);
+        let key = ranked(&[chroma])[0];
         assert_eq!(key.name(), "C major");
         assert_eq!(key.relative().name(), "A minor");
+        assert_eq!(ranked(&[chroma]).len(), 24);
     }
 }

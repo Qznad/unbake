@@ -1,5 +1,6 @@
 use crate::analysis::sections::Section;
 use crate::compare::Score;
+use crate::evidence::Finding;
 use crate::matching::Matched;
 use crate::synth::Voices;
 use serde::Serialize;
@@ -23,6 +24,7 @@ pub struct Report {
     pub flp: String,
     pub warnings: Vec<String>,
     pub files: Vec<String>,
+    pub findings: Vec<Finding>,
     pub limitations: Vec<String>,
 }
 
@@ -116,6 +118,37 @@ pub fn write_html(report: &Report, path: &Path) -> Result<(), String> {
         ));
     }
 
+    let mut sure = String::new();
+    for finding in &report.findings {
+        let confidence = finding
+            .confidence
+            .map_or("not measured".to_string(), |c| format!("{:.2}", c));
+        let alternatives: Vec<String> = finding
+            .alternatives
+            .iter()
+            .map(|a| format!("{} ({:.2})", a.value, a.score))
+            .collect();
+        let alternatives = if alternatives.is_empty() {
+            String::new()
+        } else {
+            format!("<p>Also possible: {}</p>", escape(&alternatives.join(", ")))
+        };
+        let unknowns = if finding.unknowns.is_empty() {
+            String::new()
+        } else {
+            format!("<p>Unknown:</p><ul>{}</ul>", list(&finding.unknowns))
+        };
+        sure.push_str(&format!(
+            "<section>\n<h3>{}: {}</h3>\n<p>Confidence {}</p>\n{}{}<p class=\"small\">Limits:</p><ul class=\"small\">{}</ul>\n</section>\n",
+            escape(&finding.name),
+            escape(&finding.value),
+            confidence,
+            alternatives,
+            unknowns,
+            list(&finding.limitations)
+        ));
+    }
+
     let page = format!(
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
@@ -125,6 +158,7 @@ pub fn write_html(report: &Report, path: &Path) -> Result<(), String> {
          <dt>Length</dt><dd>{:.1} s</dd><dt>FL project</dt><dd>{}</dd></dl>\n\
          <div class=\"ab\"><label>Original mix <audio controls preload=\"none\" src=\"extras/mix.wav\"></audio></label>\n\
          <label>Rebuild preview <audio controls preload=\"none\" src=\"extras/render/mix.wav\"></audio></label></div>\n\
+         <h2>How sure unbake is</h2>\n<p class=\"small\">Confidence goes from 0 (a guess between equals) to 1 (nothing else came close). It says how clearly a choice beat its alternatives, not whether it is right. Also possible lists what came next, scored against the choice.</p>\n{}\n\
          <h2>Sections</h2>\n<ul>{}</ul>\n<p>Chords: {}</p>\n{}\n<h2>Sounds in the FL project</h2>\n<ul>{}</ul>\n\
          <h2>Sound matching</h2>\n<ul>{}</ul>\n\
          <h2>Warnings</h2>\n<ul>{}</ul>\n<h2>Limits</h2>\n<ul>{}</ul>\n\
@@ -138,6 +172,7 @@ pub fn write_html(report: &Report, path: &Path) -> Result<(), String> {
         report.bars,
         report.duration_seconds,
         escape(&report.flp),
+        sure,
         list(&sections),
         escape(&report.chords.join(" ")),
         parts,
