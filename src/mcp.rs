@@ -1,3 +1,4 @@
+use crate::doctor;
 use crate::flp;
 use crate::rebuild;
 use crate::separate;
@@ -64,8 +65,13 @@ fn tools() -> Value {
     let file = json!({ "type": "string", "description": "path to an audio file" });
     json!([
         {
+            "name": "doctor",
+            "description": "Check that ffmpeg, demucs, basic-pitch and the GPU are found. Each check has a status (ok, warning or missing), what it is needed for, and the command that fixes it. Run it first when another tool fails.",
+            "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
             "name": "analyze",
-            "description": "Find the tempo, first bar, number of bars and key of a song.",
+            "description": "Find the tempo, first bar, number of bars and key of a song, with how sure each is and what else could fit.",
             "inputSchema": { "type": "object", "properties": { "file": file }, "required": ["file"] }
         },
         {
@@ -119,6 +125,7 @@ fn call_tool(params: &Value) -> Value {
             .and_then(|file| rebuild::analyze_song(&file))
             .and_then(|info| serde_json::to_value(info).map_err(|e| e.to_string())),
         "split" => split(args),
+        "doctor" => serde_json::to_value(doctor::run()).map_err(|e| e.to_string()),
         "rebuild" => rebuild_tool(args),
         "flp_info" => path_arg(args, "file")
             .and_then(|file| flp::events::read(&file))
@@ -203,11 +210,11 @@ mod tests {
         );
     }
 
-    // the tool list has four tools and an unknown tool comes back as an error result
+    // the tool list has five tools and an unknown tool comes back as an error result
     #[test]
     fn lists_tools() {
         let reply = handle(&json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).unwrap();
-        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 4);
+        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 5);
         let call = handle(&json!({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": { "name": "nope", "arguments": {} }

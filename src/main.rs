@@ -9,6 +9,7 @@ mod arrange;
 mod audio;
 mod basic_pitch;
 mod compare;
+mod doctor;
 mod eval;
 mod evidence;
 mod findings;
@@ -106,6 +107,14 @@ enum Command {
 
     #[command(about = "run as an mcp server so ai agents can use unbake, over stdin and stdout")]
     Mcp,
+
+    #[command(
+        about = "check that ffmpeg, demucs, basic-pitch and the gpu are found, and say how to fix what isn't"
+    )]
+    Doctor {
+        #[arg(long, help = "print the checks as json")]
+        json: bool,
+    },
 }
 
 // prints how sure each finding is, with what else fits, what is unknown and what the method can't do
@@ -297,6 +306,29 @@ fn run(command: Command) -> Result<(), String> {
             Ok(())
         }
         Command::Mcp => mcp::serve(),
+        Command::Doctor { json } => {
+            let checks = doctor::run();
+            if json {
+                let text = serde_json::to_string_pretty(&checks).map_err(|e| e.to_string())?;
+                println!("{}", text);
+                return Ok(());
+            }
+            for c in &checks {
+                let status = match c.status {
+                    doctor::Status::Ok => "ok",
+                    doctor::Status::Warning => "warning",
+                    doctor::Status::Missing => "missing",
+                };
+                println!("{:<12} {:<8} {}", c.name, status, c.detail);
+                if c.status != doctor::Status::Ok {
+                    println!("{:<21} needed for {}", "", c.needed_for);
+                }
+                if let Some(fix) = &c.fix {
+                    println!("{:<21} fix: {}", "", fix);
+                }
+            }
+            Ok(())
+        }
     }
 }
 

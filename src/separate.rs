@@ -28,7 +28,7 @@ pub fn split(song: &Path, dir: &Path) -> Result<(), String> {
         .arg(song)
         .status()
         .map_err(|_| {
-            "demucs was not found, install it with `uv tool install --python 3.11 demucs` \
+            "demucs was not found, run `unbake doctor` to see how to install it, \
              or pass --stems with a folder holding drums.wav, bass.wav, other.wav and vocals.wav"
                 .to_string()
         })?;

@@ -28,9 +28,7 @@ pub fn transcribe(stem: &Path, work: &Path) -> Result<Vec<Event>, String> {
         .arg(stem)
         .output()
         .map_err(|_| {
-            "basic-pitch was not found, install it with \
-             `uv tool install --python 3.10 basic-pitch --with \"setuptools<81\"`"
-                .to_string()
+            "basic-pitch was not found, run `unbake doctor` to see how to install it".to_string()
         })?;
     if !output.status.success() || !csv.exists() {
         let said = String::from_utf8_lossy(&output.stdout).to_string()

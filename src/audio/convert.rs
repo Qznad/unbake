@@ -25,7 +25,9 @@ pub fn to_wav(input: &Path, output: &Path) -> Result<(), String> {
         .args(["-ac", "2", "-c:a", "pcm_s16le"])
         .arg(output)
         .status()
-        .map_err(|_| "ffmpeg was not found, install it to open non-wav files".to_string())?;
+        .map_err(|_| {
+            "ffmpeg was not found, run `unbake doctor` to see how to install it".to_string()
+        })?;
     if !status.success() {
         return Err(format!("ffmpeg could not convert {}", input.display()));
     }
