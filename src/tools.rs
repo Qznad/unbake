@@ -136,6 +136,10 @@ pub fn piano_roll(
             .iter()
             .zip(COLORS)
             .map(|(n, (color, _))| format!("{} in {}", n, color))
+            .chain(
+                (names.len() > 1)
+                    .then(|| format!("notes in more than one of them in {}", piano_roll::SHARED.0)),
+            )
             .collect(),
         scale: piano_roll::scale(&image),
         png: image.png,

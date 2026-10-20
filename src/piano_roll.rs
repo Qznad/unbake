@@ -1,4 +1,5 @@
 use crate::music::{BAR, Note, PPQ, STEP, note_name};
+use std::collections::{HashMap, HashSet};
 
 const STEP_PX: f64 = 8.0;
 const KEY_PX: u32 = 7;
@@ -9,6 +10,7 @@ pub const COLORS: [(&str, [u8; 3]); 4] = [
     ("pink", [240, 90, 220]),
     ("green", [130, 230, 70]),
 ];
+pub const SHARED: (&str, [u8; 3]) = ("white", [235, 235, 235]);
 
 pub struct Layer<'a> {
     pub notes: &'a [Note],
@@ -80,13 +82,22 @@ pub fn render(layers: &[Layer], from_bar: u32, bars: u32) -> Result<Image, Strin
         tick += PPQ;
     }
 
+    let mut layers_with: HashMap<(u32, u8), usize> = HashMap::new();
+    for layer in layers {
+        let own: HashSet<(u32, u8)> = layer.notes.iter().map(|n| (n.start, n.key)).collect();
+        for place in own {
+            *layers_with.entry(place).or_default() += 1;
+        }
+    }
     for layer in layers {
         for note in layer.notes.iter().filter(visible) {
             if note.key < lowest || note.key > highest {
                 continue;
             }
+            let shared = layers_with[&(note.start, note.key)] > 1;
+            let base = if shared { SHARED.1 } else { layer.color };
             let level = 0.45 + 0.55 * note.velocity as f64 / 127.0;
-            let color = layer.color.map(|c| (c as f64 * level) as u8);
+            let color = base.map(|c| (c as f64 * level) as u8);
             let x0 = x_of(note.start.max(start));
             let x1 = x_of((note.start + note.length).min(end)).max(x0 + 2);
             let row = (highest - note.key) as u32;

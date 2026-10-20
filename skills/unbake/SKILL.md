@@ -26,8 +26,8 @@ Don't decide silently when unbake gives choices. Show the user what differs, wit
 
 4. **Pick the melody with the user.** Call `melody_candidates`.
    - If there is only one, or the others share more than 90% of their notes with it, keep the chosen one and say so.
-   - Otherwise call `piano_roll` with the candidates (up to four, first in orange, then cyan, pink, green) over 4 to 8 bars where the song is busy, often the first drop or chorus. Look at it and show it to the user. Describe the difference: range, how jumpy it is, how dense, how many notes it shares with the first.
-   - Recommend one. A `vocals` candidate inside about two octaves is usually the real melody of a sung song. A line spanning more than two octaves is probably jumping between instruments. Then ask the user which one sounds like the lead.
+   - Otherwise call `piano_roll` with the candidates (up to four, first in orange, then cyan, pink, green, and white where they share a note) over 4 to 8 bars where the song is busy, often the first drop or chorus. Look at it and show it to the user. Describe the difference: range, how jumpy it is, how dense, how many notes it shares with the first.
+   - Recommend one. A `vocals` candidate inside about two octaves is usually the real melody of a sung song. A line spanning more than two octaves is probably jumping between instruments. Then ask the user which one sounds like the lead, and **stop until they answer**. Even when the user asked for the whole project in one go, the melody choice is theirs: only pick for them if they say so.
    - Call `choose_melody` with their answer. Everything else from the other stem becomes the chords part.
    - Use `inspect_part` to answer questions about specific bars ("what notes does the bass play in bar 9?"). Don't list whole songs of notes.
 
