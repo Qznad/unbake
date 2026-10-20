@@ -7,6 +7,8 @@ use serde_json::{Value, json};
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
+const SKILL: &str = include_str!("../skills/unbake/SKILL.md");
+
 // answers model context protocol requests, one json message per line on stdin, until stdin closes
 pub fn serve() -> Result<(), String> {
     let stdin = std::io::stdin();
@@ -40,7 +42,8 @@ fn handle(request: &Value) -> Option<Value> {
         "initialize" => json!({
             "protocolVersion": request["params"]["protocolVersion"].as_str().unwrap_or("2025-06-18"),
             "capabilities": { "tools": {} },
-            "serverInfo": { "name": "unbake", "version": env!("CARGO_PKG_VERSION") }
+            "serverInfo": { "name": "unbake", "version": env!("CARGO_PKG_VERSION") },
+            "instructions": instructions()
         }),
         "ping" => json!({}),
         "tools/list" => json!({ "tools": tools() }),
@@ -54,6 +57,19 @@ fn handle(request: &Value) -> Option<Value> {
         }
     };
     Some(json!({ "jsonrpc": "2.0", "id": id, "result": result }))
+}
+
+// the skill's workflow without its front matter, sent to agents when they connect
+pub fn instructions() -> &'static str {
+    let text = SKILL.trim_start();
+    text.strip_prefix("---")
+        .and_then(|rest| {
+            rest.split_once(
+                "
+---",
+            )
+        })
+        .map_or(text, |(_, body)| body.trim_start())
 }
 
 // a json-rpc error answer
@@ -409,7 +425,7 @@ mod tests {
         assert_eq!(base64(b"foobar"), "Zm9vYmFy");
     }
 
-    // the handshake answers with the server name and a notification gets no answer
+    // the handshake answers with the server name and the workflow, and a notification gets no answer
     #[test]
     fn handshake() {
         let reply = handle(&json!({
@@ -419,6 +435,9 @@ mod tests {
         .unwrap();
         assert_eq!(reply["result"]["serverInfo"]["name"], "unbake");
         assert_eq!(reply["result"]["protocolVersion"], "2025-06-18");
+        let text = reply["result"]["instructions"].as_str().unwrap();
+        assert!(text.starts_with("# unbake"));
+        assert!(text.contains("choose_melody"));
         assert!(
             handle(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })).is_none()
         );
