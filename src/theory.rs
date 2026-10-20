@@ -6,6 +6,8 @@ use crate::music::{BAR, Note, Part, STEP};
 const SLOT: u32 = BAR / 2;
 const CHANGE_ON_BAR: f32 = 0.15;
 const CHANGE_MID_BAR: f32 = 0.35;
+const EXTRA: f64 = 0.15;
+const MAX_EXTRAS: usize = 2;
 
 // the chords modern songs in a key mostly use, its own major and minor triads plus the usual borrowed ones
 pub fn palette(key: &Key) -> Vec<Chord> {
@@ -172,42 +174,96 @@ fn best_path(fit: &[Vec<f32>]) -> Vec<usize> {
 
 // stacks each chord in close position, picking the inversion nearest the chord before so the voices move smoothly
 pub fn voice(spans: &[ChordSpan]) -> Vec<Note> {
+    let sets: Vec<(Vec<usize>, u8, u8)> = spans
+        .iter()
+        .map(|s| (tones(&s.chord).to_vec(), 54, 90))
+        .collect();
+    lead(spans, &sets)
+}
+
+// holds one chord per span, its triad plus the other note names heard sounding through it, near where they were heard
+pub fn hold(spans: &[ChordSpan], heard: &[Note]) -> Vec<Note> {
+    lead(spans, &chord_sets(spans, heard))
+}
+
+// each span's note names, the register they were heard in and how loud, from the triad and the heard notes sounding through it
+fn chord_sets(spans: &[ChordSpan], heard: &[Note]) -> Vec<(Vec<usize>, u8, u8)> {
+    spans
+        .iter()
+        .map(|span| {
+            let end = span.start + span.length;
+            let mut time = [0u32; 12];
+            let mut weighted = 0u64;
+            let mut loud = 0u64;
+            for note in heard {
+                let from = note.start.max(span.start);
+                let to = (note.start + note.length).min(end);
+                if to <= from {
+                    continue;
+                }
+                let held = to - from;
+                time[note.key as usize % 12] += held;
+                weighted += note.key as u64 * held as u64;
+                loud += note.velocity as u64 * held as u64;
+            }
+            let total: u32 = time.iter().sum();
+            let mut pcs = tones(&span.chord).to_vec();
+            let mut extras: Vec<usize> = (0..12)
+                .filter(|pc| !pcs.contains(pc))
+                .filter(|&pc| total > 0 && time[pc] as f64 >= EXTRA * total as f64)
+                .collect();
+            extras.sort_by_key(|&pc| std::cmp::Reverse(time[pc]));
+            pcs.extend(extras.into_iter().take(MAX_EXTRAS));
+            let center = if total > 0 {
+                (weighted / total as u64).clamp(48, 72) as u8
+            } else {
+                60
+            };
+            let velocity = if total > 0 {
+                (loud / total as u64).clamp(40, 110) as u8
+            } else {
+                90
+            };
+            (pcs, center, velocity)
+        })
+        .collect()
+}
+
+// stacks each span's note names upward from a low note near its center, the inversion moving least from the chord before
+fn lead(spans: &[ChordSpan], sets: &[(Vec<usize>, u8, u8)]) -> Vec<Note> {
     let mut notes = Vec::new();
-    let mut previous: Option<[u8; 3]> = None;
-    for span in spans {
-        let pcs = tones(&span.chord);
-        let mut best: Option<([u8; 3], u32)> = None;
-        for low in 48u8..60 {
+    let mut previous: Option<Vec<u8>> = None;
+    for (span, (pcs, center, velocity)) in spans.iter().zip(sets) {
+        let mut best: Option<(Vec<u8>, u32)> = None;
+        for low in center.saturating_sub(6)..center + 6 {
             if !pcs.contains(&(low as usize % 12)) {
                 continue;
             }
-            let mut keys = [low, 0, 0];
-            let mut key = low;
-            for i in 1..3 {
-                key += 1;
-                while !pcs.contains(&(key as usize % 12))
-                    || keys[..i].iter().any(|&k| k % 12 == key % 12)
-                {
-                    key += 1;
+            let keys = stack(pcs, low);
+            let cost = match &previous {
+                Some(before) if before.len() == keys.len() => before
+                    .iter()
+                    .zip(&keys)
+                    .map(|(a, b)| a.abs_diff(*b) as u32)
+                    .sum(),
+                Some(before) => {
+                    let mean = |k: &[u8]| k.iter().map(|&x| x as u32).sum::<u32>() / k.len() as u32;
+                    mean(before).abs_diff(mean(&keys)) * keys.len() as u32
                 }
-                keys[i] = key;
-            }
-            let cost = match previous {
-                Some(before) => (0..3).map(|i| before[i].abs_diff(keys[i]) as u32).sum(),
                 None => u32::from(low as usize % 12 != span.chord.root),
             };
-            if best.is_none_or(|(_, c)| cost < c) {
+            if best.as_ref().is_none_or(|(_, c)| cost < *c) {
                 best = Some((keys, cost));
             }
         }
         let Some((keys, _)) = best else {
             continue;
         };
-        for key in keys {
+        for &key in &keys {
             notes.push(Note {
                 part: Part::Chords,
                 key,
-                velocity: 90,
+                velocity: *velocity,
                 start: span.start,
                 length: span.length - STEP / 2,
             });
@@ -217,9 +273,23 @@ pub fn voice(spans: &[ChordSpan]) -> Vec<Note> {
     notes
 }
 
+// every note name of a set once, going up from a low note
+fn stack(pcs: &[usize], low: u8) -> Vec<u8> {
+    let mut keys = vec![low];
+    let mut key = low;
+    while keys.len() < pcs.len() {
+        key += 1;
+        if pcs.contains(&(key as usize % 12)) && keys.iter().all(|&k| k % 12 != key % 12) {
+            keys.push(key);
+        }
+    }
+    keys
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::music::PPQ;
 
     // a note of a part at a step, a beat long
     fn note(key: u8, start: u32, length: u32) -> Note {
@@ -272,6 +342,31 @@ mod tests {
         let names: Vec<String> = spans.iter().map(|s| s.chord.name()).collect();
         assert_eq!(names, vec!["Am", "F", "C", "G"]);
         assert!(spans.iter().all(|s| s.length == BAR));
+    }
+
+    // a d held through a c minor bar joins the chord, a short passing note does not
+    #[test]
+    fn holds_heard_extras() {
+        let span = ChordSpan {
+            chord: Chord {
+                root: 0,
+                minor: true,
+            },
+            start: 0,
+            length: BAR,
+        };
+        let heard = vec![
+            note(60, 0, BAR),
+            note(63, 0, BAR),
+            note(67, 0, BAR),
+            note(74, 0, BAR),
+            note(65, PPQ, STEP),
+        ];
+        let notes = hold(&[span], &heard);
+        let mut names: Vec<usize> = notes.iter().map(|n| n.key as usize % 12).collect();
+        names.sort();
+        assert_eq!(names, vec![0, 2, 3, 7]);
+        assert!(notes.iter().all(|n| n.start == 0 && n.length > BAR / 2));
     }
 
     // f major after a minor keeps the shared a and c in place and moves e up to f

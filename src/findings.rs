@@ -234,7 +234,7 @@ pub fn chords(spans: &[ChordSpan], simple: bool) -> Finding {
     finding.limitations.push(if simple {
         "the chords part plays those triads, not the notes heard".to_string()
     } else {
-        "the chords part holds every other-stem note that isn't the melody, not only chord tones"
+        "the chords part holds one chord per change, the triad plus up to two other notes heard through it, so riffs and arpeggios in the other stem are left out"
             .to_string()
     });
     finding

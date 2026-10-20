@@ -28,11 +28,11 @@ Don't decide silently when unbake gives choices. Show the user what differs, wit
    - If there is only one, or the others share more than 90% of their notes with it, keep the chosen one and say so.
    - Otherwise call `piano_roll` with the candidates (up to four, first in orange, then cyan, pink, green, and white where they share a note) over 4 to 8 bars where the song is busy, often the first drop or chorus. Look at it and show it to the user. Describe the difference: range, how jumpy it is, how dense, how many notes it shares with the first.
    - Recommend one. A `vocals` candidate inside about two octaves is usually the real melody of a sung song. A line spanning more than two octaves is probably jumping between instruments. Then ask the user which one sounds like the lead, and **stop until they answer**. Even when the user asked for the whole project in one go, the melody choice is theirs: only pick for them if they say so.
-   - Call `choose_melody` with their answer. Everything else from the other stem becomes the chords part.
+   - Call `choose_melody` with their answer. The chords part is one held chord per chord change, voiced from what the other stem plays besides the melody; `leftover` names those notes, where riffs and arpeggios end up.
    - Use `inspect_part` to answer questions about specific bars ("what notes does the bass play in bar 9?"). Don't list whole songs of notes.
 
 5. **Write the project.** Call `write_flp` with the folder. Options to offer when they fit what the user wants:
-   - `simple_chords`: clean triads that follow the key instead of every note heard. Easier to read and edit, less exact.
+   - `simple_chords`: plain three-note triads. By default each chord also keeps up to two extra notes heard in it (a Cm with an added D), which sounds closer; triads are easier for a beginner to read.
    - `loops`: up to 4 reused 4-bar loops per part instead of one pattern copying the whole song. Tidier, but changes in the middle of the song get averaged away.
    - `sounds`: a folder with the user's own sounds (kick, snare, hat, bass, lead, pad).
    - `template`: the user's own FL template with channels named Kick, Snare, Hat, Bass, Lead and Pad.

@@ -81,7 +81,7 @@ fn error_reply(id: Value, code: i64, message: &str) -> Value {
 fn tools() -> Value {
     let file = json!({ "type": "string", "description": "path to an audio file" });
     let folder = json!({ "type": "string", "description": "a rebuild folder made by transcribe" });
-    let name = json!({ "type": "string", "description": "drums, bass, melody (the chosen candidate), chords, or a melody candidate's name" });
+    let name = json!({ "type": "string", "description": "drums, bass, melody (the chosen candidate), chords (the held chords), leftover (the other-stem notes that are neither), or a melody candidate's name" });
     let from_bar =
         json!({ "type": "integer", "description": "first bar, counting from 1, default 1" });
     json!([
@@ -120,7 +120,7 @@ fn tools() -> Value {
                     "sounds": { "type": "string", "description": "folder with the user's own sounds named kick, snare, hat, bass, lead, pad" },
                     "fl_folder": { "type": "string", "description": "windows folder the rebuild will be copied to" },
                     "match_sounds": { "type": "boolean", "description": "tune the synth sounds to the stems, default true" },
-                    "simple_chords": { "type": "boolean", "description": "write the chords as clean triads that follow the key, easier to edit but less exact, default false" },
+                    "simple_chords": { "type": "boolean", "description": "write the chords as plain three-note triads, without the extra notes heard in them, default false" },
                     "loops": { "type": "boolean", "description": "arrange each part as up to 4 reused 4 bar loops instead of one pattern copying the whole song, default false" }
                 },
                 "required": ["file"]
@@ -193,7 +193,7 @@ fn tools() -> Value {
                     "sounds": { "type": "string", "description": "folder with the user's own sounds named kick, snare, hat, bass, lead, pad" },
                     "fl_folder": { "type": "string", "description": "windows folder the rebuild will be copied to" },
                     "match_sounds": { "type": "boolean", "description": "tune the synth sounds to the stems, default true" },
-                    "simple_chords": { "type": "boolean", "description": "write the chords as clean triads that follow the key, easier to edit but less exact, default false" },
+                    "simple_chords": { "type": "boolean", "description": "write the chords as plain three-note triads, without the extra notes heard in them, default false" },
                     "loops": { "type": "boolean", "description": "arrange each part as up to 4 reused 4 bar loops instead of one pattern copying the whole song, default false" }
                 },
                 "required": ["folder"]

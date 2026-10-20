@@ -89,7 +89,7 @@ enum Command {
     Choose { folder: PathBuf, candidate: String },
 
     #[command(
-        about = "list the notes of a part or candidate in some bars: drums, bass, melody, chords or a candidate's name"
+        about = "list the notes of a part or candidate in some bars: drums, bass, melody, chords, leftover or a candidate's name"
     )]
     Inspect {
         folder: PathBuf,
@@ -171,7 +171,7 @@ struct ProjectArgs {
     no_match: bool,
     #[arg(
         long,
-        help = "write the chords as clean triads that follow the key, easier to edit but less exact"
+        help = "write the chords as plain three-note triads, without the extra notes heard in them"
     )]
     simple_chords: bool,
     #[arg(

@@ -6,7 +6,7 @@ use crate::report::Report;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
-const PARTS: [&str; 4] = ["drums", "bass", "melody", "chords"];
+const PARTS: [&str; 5] = ["drums", "bass", "melody", "chords", "leftover"];
 
 #[derive(Serialize)]
 pub struct CandidateView {
@@ -163,7 +163,8 @@ fn notes_named(session: &Session, name: &str) -> Result<Vec<Note>, String> {
             .chosen()
             .map(|c| c.notes.clone())
             .unwrap_or_default()),
-        "chords" => Ok(session.chord_notes()),
+        "chords" => Ok(session.held_chords()),
+        "leftover" => Ok(session.leftover_notes()),
         other => session
             .candidates
             .iter()

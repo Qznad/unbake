@@ -117,8 +117,13 @@ impl Session {
             .or(self.candidates.first())
     }
 
-    // the other stem's notes that are not in the chosen melody, which the chords part plays
-    pub fn chord_notes(&self) -> Vec<Note> {
+    // the chords part, one held chord per chord of the progression voiced from the leftover notes
+    pub fn held_chords(&self) -> Vec<Note> {
+        theory::hold(&self.chord_spans, &self.leftover_notes())
+    }
+
+    // the other stem's notes that are not in the chosen melody
+    pub fn leftover_notes(&self) -> Vec<Note> {
         let taken: HashSet<(u32, u8)> = match self.chosen() {
             Some(c) if !c.from_vocals => c.notes.iter().map(|n| (n.start, n.key)).collect(),
             _ => HashSet::new(),
@@ -437,7 +442,7 @@ pub fn build(options: &Options, session: &Session) -> Result<Report, String> {
                 .collect()
         })
         .unwrap_or_default();
-    let heard_chords = session.chord_notes();
+    let heard_chords = session.leftover_notes();
     let heard_melody = match chosen {
         Some(c) if !c.from_vocals => melody_notes.clone(),
         _ => Vec::new(),
@@ -445,7 +450,7 @@ pub fn build(options: &Options, session: &Session) -> Result<Report, String> {
     let chord_notes = if options.simple_chords {
         theory::voice(chord_spans)
     } else {
-        heard_chords.clone()
+        session.held_chords()
     };
     let mut findings = session.findings.clone();
     if let Some(c) = chosen {
