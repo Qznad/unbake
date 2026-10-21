@@ -9,6 +9,8 @@ use serde_json::{Value, json};
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
+const AFTER_TRANSCRIBE: &str = "Stop here and ask the user before building anything, even if they asked for everything in one go. Tell them the tempo, key, bars and sections, then ask: the genre (suggest one from the tempo and drums), the tempo if the tempo finding has a half or double time unknown, and which section the loop should come from (suggest the busiest drop from song_overview). After they answer, propose a reference project and its sounds and ask again. Don't reuse choices from earlier unbake projects you find on disk unless the user points you to them.";
+const AFTER_COMPOSE: &str = "Stop here. Tell the user which .flp to open (in this folder), then ask: can every part be heard, how does it feel overall, and which part is weakest. Wait for their answer. Don't write another version or the whole song until they say this one works, and before the whole song show them the section plan and wait for an OK.";
 const SKILL: &str = include_str!("../skills/unbake/SKILL.md");
 
 // answers model context protocol requests, one json message per line on stdin, until stdin closes
@@ -426,10 +428,13 @@ fn grid_tool(args: &Value) -> Result<Vec<views::GridBar>, String> {
 }
 
 // writes a loop description into a folder as an fl studio project
-fn compose_tool(args: &Value) -> Result<compose::Written, String> {
+fn compose_tool(args: &Value) -> Result<Value, String> {
     let out = path_arg(args, "out")?;
     let template = optional_path(args, "template");
-    compose::write_json(&args["loop"], &out, template.as_deref())
+    let written = compose::write_json(&args["loop"], &out, template.as_deref())?;
+    let mut answer = serde_json::to_value(written).map_err(|e| e.to_string())?;
+    answer["next_step"] = json!(AFTER_COMPOSE);
+    Ok(answer)
 }
 
 // an answer as one block of compact json text, which agents read as well as indented json at a fraction of the size
@@ -453,6 +458,7 @@ fn transcribe_tool(args: &Value) -> Result<Value, String> {
         "findings": session.findings,
         "melody_candidates": tools::candidates(&folder)?,
         "warnings": session.warnings,
+        "next_step": AFTER_TRANSCRIBE,
     }))
 }
 
@@ -632,12 +638,39 @@ mod tests {
         let text = reply["result"]["instructions"].as_str().unwrap();
         assert!(text.starts_with("# unbake"));
         assert!(text.contains("choose_melody"));
+        assert!(text.contains("## Stop points"));
         assert!(
             handle(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })).is_none()
         );
     }
 
-    // the tool list has eleven tools and an unknown tool comes back as an error result
+    // a written loop comes back with the reminder to stop and let the user listen
+    #[test]
+    fn compose_asks_to_stop() {
+        let out = std::env::temp_dir().join("unbake_mcp_compose_test");
+        let reply = handle(&json!({
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": { "name": "compose_loop", "arguments": {
+                "out": out.display().to_string(),
+                "loop": {
+                    "name": "stop test", "tempo": 120, "bars": 1,
+                    "channels": [ { "name": "Kick", "sample": "C:/kick.wav" } ],
+                    "patterns": [ { "name": "Kick", "grids": [ { "channel": "Kick", "hits": "x..............." } ] } ]
+                }
+            } }
+        }))
+        .unwrap();
+        let text = reply["result"]["content"][0]["text"].as_str().unwrap();
+        let answer: Value = serde_json::from_str(text).unwrap();
+        assert!(
+            answer["next_step"]
+                .as_str()
+                .unwrap()
+                .starts_with("Stop here")
+        );
+    }
+
+    // the tool list has nineteen tools and an unknown tool comes back as an error result
     #[test]
     fn lists_tools() {
         let reply = handle(&json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).unwrap();

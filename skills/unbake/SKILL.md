@@ -13,6 +13,17 @@ Every result carries **findings**: a value, a confidence, alternatives that came
 
 Don't decide silently when there are choices: the genre, the melody, the reference sounds. Show what differs, give your recommendation and why in plain words, then let them pick. The users already use FL Studio and want to understand how a song is built, so explain the music (why this chord, why the hats double here) more than the software.
 
+## Stop points
+
+These are rules, not suggestions. Stop and wait for the user's answer at each one, even when they asked for everything in one go ("make a loop, then the whole song"): that asks for the whole journey, not for skipping their choices.
+
+1. **After transcribing, before building anything:** tell them what was found, then ask the genre (with your suggestion), the tempo when the tempo finding has a half or double time unknown, the reference project and sounds you propose, and which section the loop comes from (with your suggestion from `song_overview`).
+2. **After writing the loop:** tell them which file to open and ask the three listening questions (step 5 of path A). Don't write another version or the whole song until they say the loop works.
+3. **Before the whole song:** show the section plan (which bars get which drums, bass, chords and melody letters, and what changes where) and wait for an OK.
+4. **After writing the whole song:** ask them to listen and say what's wrong, section by section.
+
+Build from this song's facts and FL's references. Projects you find on disk from earlier unbake runs are not this user's choices: don't reuse their sounds or structure unless the user points you to them.
+
 ## First steps
 
 1. **Check the tools when something fails.** Call `doctor`. Its first line says which unbake build is answering (version and commit); a tool refusing a setting you expected to work usually means an older build. Each check says ok, warning or missing, what it is needed for, and the fix command. Show the fix and ask before running installs.
@@ -30,7 +41,7 @@ Then take path A (recommended) or B.
 
 This is the path users liked: real producers' sounds playing the song's own facts. Start with one 8-bar loop of the song's main section, get it right with the user, and only then arrange the whole song.
 
-1. **Agree on the genre.** Suggest one from the tempo and the drums (for example 160 to 180 with busy breaks is drum & bass, breakcore sits around 140 to 180, a kick on every beat at 120 to 130 is house) and ask the user to confirm or correct it.
+1. **Agree on the genre (stop point 1).** Suggest one from the tempo and the drums (for example 160 to 180 with busy breaks is drum & bass, breakcore sits around 140 to 180, a kick on every beat at 120 to 130 is house) and ask the user to confirm or correct it.
 
 2. **Pick a reference.** Call `references` (a short summary of each project) with a tempo range around the song's (allow double or half for half-time genres) or with words like `break`. Prefer demo songs, which are full tracks, over templates, which are empty. Call `flp_info` on the best one or two and propose which channels to borrow for drums, sub, bass, pad and lead. Avoid channels marked `volume 0, automated` (they were faded in by automation; if you use one anyway it is reset to 78%) and `not installed`. Use `reference_pattern` to read how the producer wrote a groove, bassline or break pattern.
 
@@ -52,11 +63,11 @@ This is the path users liked: real producers' sounds playing the song's own fact
    - `tracks` naming the playlist tracks after the instruments (Kick, Snare, Hats, Sub, Bass, Keys, Lead)
    - `stems` with the transcribed folder and the loop's source bars (`from_bar`, `bars`), so the song's four stems sit muted under the loop and the user can unmute one to compare each part; keep the project at the song's tempo so they line up
 
-5. **Ask the user to listen.** Tell them which file to open, then ask three things: can every part be heard, how does it feel overall, and which part is weakest. Silent parts usually mean a volume of 0 or an automated filter in the copied channel or its effects.
+5. **Ask the user to listen (stop point 2).** Tell them which file to open, then ask three things: can every part be heard, how does it feel overall, and which part is weakest. Silent parts usually mean a volume of 0 or an automated filter in the copied channel or its effects.
 
 6. **Improve it.** The description is saved next to the project as json. Change only what the user pointed at and write it under a new name (v2, v3) so they can compare. Explain each change in music terms ("the bass now holds the root and pulses 8ths an octave up, the way the song's bar 36 does").
 
-7. **Then the whole song,** once the loop works. Songs change as they go, so never repeat the loop's melody, bass and chords all the way through:
+7. **Then the whole song,** once the user says the loop works. First show them the section plan and wait for an OK (stop point 3). Songs change as they go, so never repeat the loop's melody, bass and chords all the way through:
    - `song_overview` finds the song's repeating cycle (often 8 bars of chords) and where the drums, hats, bass and lead come in and drop out.
    - `song_parts` with `melody`, `bass`, `leftover` and `drums`, from the cycle's first bar with the cycle's length, letters every cycle (A A B A C...). Call it once to see the letters, then with `letter` for the notes of each letter you write. Write one pattern per letter ("Lead A", "Lead B", "Bass C") with `from_parts` in `compose_loop`, which takes the letter's notes straight from song_parts with a channel, a transpose and a note range (no need to copy notes by hand), and place each letter with a clip's `at` list, the bars song_parts gives for that letter. A letter heard several times is voted and clean. A melody letter heard once that is a `variation_of` another gets its gaps filled from it. A melody letter heard once with no relative is raw and often another instrument while the lead drops out: put it on its own track listed in `mute`, named like "Lead (unsure, check against the Other stem)", and tell the user. The bass comes back already moved onto each bar's root and fifth, the clean bassline a producer would write.
    - `harmony` over the whole song gives each span's real chord, so the keys and the sub follow the song's changes (a Gmadd9 or a C turnaround) instead of one cycle repeated.
