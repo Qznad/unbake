@@ -10,6 +10,7 @@ pub struct Channel {
     pub plugin: Option<String>,
     pub sample: Option<String>,
     pub insert: Option<u8>,
+    pub volume: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -64,6 +65,7 @@ pub fn summarize(project: &Project) -> Summary {
                     plugin: None,
                     sample: None,
                     insert: None,
+                    volume: None,
                 });
                 in_channel = true;
                 current_pattern = None;
@@ -81,6 +83,12 @@ pub fn summarize(project: &Project) -> Summary {
             (events::SAMPLE_PATH, Value::Data(data)) if in_channel => {
                 if let Some(channel) = channels.last_mut() {
                     channel.sample = Some(events::decode_text(data)).filter(|p| !p.is_empty());
+                }
+            }
+            (events::CHANNEL_LEVELS, Value::Data(_)) if in_channel => {
+                if let Some(channel) = channels.last_mut() {
+                    channel.volume = crate::flp::channels::volume(std::slice::from_ref(event))
+                        .map(|v| (v as u64 * 100 / 12800) as u32);
                 }
             }
             (events::CHANNEL_INSERT, Value::Byte(insert)) if in_channel => {

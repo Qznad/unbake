@@ -18,6 +18,7 @@ pub const PLUGIN_NAME: u8 = 201;
 pub const PLUGIN_DATA: u8 = 212;
 pub const CHANNEL_NAME: u8 = 203;
 pub const INSERT_NAME: u8 = 204;
+pub const CHANNEL_LEVELS: u8 = 219;
 pub const MARKER_NAME: u8 = 205;
 pub const SAMPLE_PATH: u8 = 196;
 pub const DATA_PATH: u8 = 202;

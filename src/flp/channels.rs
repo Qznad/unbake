@@ -105,6 +105,27 @@ pub fn copy_block(from: &Project, block: &Block, id: u16, name: &str) -> Vec<Eve
     copy
 }
 
+// a channel's volume as fl studio stores it, where 12800 is full and 10000 the default
+pub fn volume(events: &[Event]) -> Option<u32> {
+    events.iter().find_map(|e| match (e.id, &e.value) {
+        (events::CHANNEL_LEVELS, Value::Data(data)) if data.len() >= 8 => {
+            Some(u32::from_le_bytes([data[4], data[5], data[6], data[7]]))
+        }
+        _ => None,
+    })
+}
+
+// sets a channel's volume, where 12800 is full and 10000 the default
+pub fn set_volume(events: &mut [Event], volume: u32) {
+    for event in events.iter_mut() {
+        if let (events::CHANNEL_LEVELS, Value::Data(data)) = (event.id, &mut event.value) {
+            if data.len() >= 8 {
+                data[4..8].copy_from_slice(&volume.to_le_bytes());
+            }
+        }
+    }
+}
+
 // sends a channel's events to a mixer insert
 pub fn route(events: &mut [Event], insert: u8) {
     for event in events.iter_mut() {

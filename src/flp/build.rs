@@ -7,6 +7,7 @@ use crate::music::{PPQ, Part};
 
 const PATTERN_BASE: u16 = 20480;
 const LAST_TRACK: u16 = 499;
+const DEFAULT_VOLUME: u32 = 10000;
 const PARTS: [Part; 6] = [
     Part::Kick,
     Part::Snare,
@@ -215,7 +216,15 @@ pub fn compose(
                 channels::copy_channel(&project, &model, id, &channel.name, path, *root)
             }
             ChannelSource::Copy { from, block } => {
-                channels::copy_block(from, block, id, &channel.name)
+                let mut copy = channels::copy_block(from, block, id, &channel.name);
+                if channels::volume(&copy) == Some(0) {
+                    channels::set_volume(&mut copy, DEFAULT_VOLUME);
+                    warnings.push(format!(
+                        "{} was saved at volume 0 in its project, probably faded in by automation, so it was set to the default 78%",
+                        channel.name
+                    ));
+                }
+                copy
             }
         };
         channels::route(&mut events, (n + 1).min(125) as u8);

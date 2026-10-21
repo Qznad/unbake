@@ -474,9 +474,14 @@ fn run(command: Command) -> Result<(), String> {
                     .insert
                     .map(|i| format!("  -> insert {}", i))
                     .unwrap_or_default();
+                let volume = match channel.volume {
+                    Some(0) => "  volume 0%, probably faded in by automation".to_string(),
+                    Some(v) => format!("  volume {}%", v),
+                    None => String::new(),
+                };
                 println!(
-                    "  {:>3}  {:<32} {}{}",
-                    channel.id, channel.name, sound, insert
+                    "  {:>3}  {:<32} {}{}{}",
+                    channel.id, channel.name, sound, insert, volume
                 );
             }
             println!("Patterns:    {}", summary.patterns.len());
