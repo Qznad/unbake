@@ -49,6 +49,7 @@ pub enum ChannelSource<'a> {
 pub struct NewChannel<'a> {
     pub name: String,
     pub source: ChannelSource<'a>,
+    pub volume: Option<u32>,
 }
 
 pub struct NewNote {
@@ -217,7 +218,7 @@ pub fn compose(
             }
             ChannelSource::Copy { from, block } => {
                 let mut copy = channels::copy_block(from, block, id, &channel.name);
-                if channels::volume(&copy) == Some(0) {
+                if channel.volume.is_none() && channels::volume(&copy) == Some(0) {
                     channels::set_volume(&mut copy, DEFAULT_VOLUME);
                     warnings.push(format!(
                         "{} was saved at volume 0 in its project, probably faded in by automation, so it was set to the default 78%",
@@ -227,6 +228,9 @@ pub fn compose(
                 copy
             }
         };
+        if let Some(percent) = channel.volume {
+            channels::set_volume(&mut events, percent.min(100) * 12800 / 100);
+        }
         channels::route(&mut events, (n + 1).min(125) as u8);
         channel_events.extend(events);
     }

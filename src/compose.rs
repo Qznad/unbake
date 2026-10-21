@@ -39,6 +39,8 @@ pub struct ChannelSpec {
     pub copy: Option<CopySpec>,
     #[serde(default = "yes")]
     pub effects: bool,
+    #[serde(default)]
+    pub volume: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -215,6 +217,7 @@ pub fn write(spec: &Loop, out: &Path, template: Option<&Path>) -> Result<Written
         new_channels.push(NewChannel {
             name: channel.name.clone(),
             source,
+            volume: channel.volume,
         });
     }
 
