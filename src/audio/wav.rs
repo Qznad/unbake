@@ -52,6 +52,24 @@ impl Wav {
     }
 }
 
+impl Wav {
+    // the part of the wav between two times in seconds, every channel kept
+    pub fn cut(&self, start: f64, end: f64) -> Wav {
+        let channels = self.info.channels.max(1) as usize;
+        let frames = self.samples.len() / channels;
+        let frame =
+            |seconds: f64| ((seconds.max(0.0) * self.info.sample_rate as f64) as usize).min(frames);
+        let (first, last) = (frame(start), frame(end).max(frame(start)));
+        Wav {
+            info: WavInfo {
+                num_frames: (last - first) as u32,
+                ..self.info.clone()
+            },
+            samples: self.samples[first * channels..last * channels].to_vec(),
+        }
+    }
+}
+
 // saves a wav file to disk
 pub fn write_wav(path: &Path, wav: &Wav) -> Result<(), String> {
     std::fs::write(path, wav.to_bytes())
@@ -201,5 +219,22 @@ mod tests {
     fn rejects_other_files() {
         assert!(parse_wav(b"hello").is_err());
         assert!(parse_wav(b"RIFF\0\0\0\0WAVEjunk").is_err());
+    }
+
+    // cutting a stereo wav keeps both channels of the frames between the two times
+    #[test]
+    fn cuts_stereo() {
+        let wav = Wav {
+            info: WavInfo {
+                sample_rate: 10,
+                channels: 2,
+                bits_per_sample: 16,
+                num_frames: 20,
+            },
+            samples: (0..40).collect(),
+        };
+        let cut = wav.cut(0.5, 1.0);
+        assert_eq!(cut.info.num_frames, 5);
+        assert_eq!(cut.samples, (10..20).collect::<Vec<i16>>());
     }
 }

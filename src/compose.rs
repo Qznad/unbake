@@ -1,4 +1,7 @@
-use crate::flp::build::{self, ChannelSource, NewChannel, NewClip, NewNote, NewPattern};
+use crate::audio::wav;
+use crate::flp::build::{
+    self, ChannelSource, NewAudioClip, NewChannel, NewClip, NewNote, NewPattern,
+};
 use crate::flp::channels::{self, Block};
 use crate::flp::events::{self, Project};
 use crate::flp::info;
@@ -6,6 +9,8 @@ use crate::flp::mixer;
 use crate::flp::timeline::{self, TimedNote};
 use crate::midi::Marker;
 use crate::music::{self, BAR, PPQ, STEP};
+use crate::rebuild;
+use crate::separate;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -26,6 +31,21 @@ pub struct Loop {
     pub markers: Vec<MarkerSpec>,
     #[serde(default)]
     pub master: Option<String>,
+    #[serde(default)]
+    pub stems: Option<StemsSpec>,
+    #[serde(default)]
+    pub tracks: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct StemsSpec {
+    pub folder: String,
+    #[serde(default = "one")]
+    pub from_bar: f64,
+    #[serde(default)]
+    pub bars: Option<f64>,
+    #[serde(default = "one")]
+    pub at_bar: f64,
 }
 
 #[derive(Deserialize)]
@@ -377,6 +397,40 @@ pub fn write(spec: &Loop, out: &Path, template: Option<&Path>) -> Result<Written
             track_names[track] = spec.patterns[pattern].name.clone();
         }
     }
+    for (n, name) in spec.tracks.iter().enumerate() {
+        if track_names.len() <= n {
+            track_names.resize(n + 1, String::new());
+        }
+        track_names[n] = name.clone();
+    }
+    let mut audio = Vec::new();
+    let mut muted = Vec::new();
+    if let Some(stems) = &spec.stems {
+        let first_track = track_names.len() as u16 + 1;
+        for (n, (name, path, seconds)) in cut_stems(spec, stems, out, &mut warnings)?
+            .into_iter()
+            .enumerate()
+        {
+            let track = first_track + n as u16;
+            audio.push(NewAudioClip {
+                channel: new_channels.len(),
+                start: tick(stems.at_bar, 1.0),
+                seconds,
+                track,
+            });
+            new_channels.push(NewChannel {
+                name: name.clone(),
+                source: ChannelSource::Audio { path },
+                volume: None,
+            });
+            if track_names.len() <= track as usize {
+                track_names.resize(track as usize + 1, String::new());
+            }
+            track_names[track as usize] = name;
+            muted.push(track);
+        }
+    }
+
     let markers: Vec<Marker> = spec
         .markers
         .iter()
@@ -391,7 +445,9 @@ pub fn write(spec: &Loop, out: &Path, template: Option<&Path>) -> Result<Written
         &new_channels,
         &patterns,
         &clips,
+        &audio,
         &track_names,
+        &muted,
         spec.tempo,
         &markers,
     )?;
@@ -415,6 +471,9 @@ pub fn write(spec: &Loop, out: &Path, template: Option<&Path>) -> Result<Written
                 channel.name
             ));
         }
+    }
+    for (n, channel) in new_channels.iter().enumerate().skip(spec.channels.len()) {
+        mixer::name_insert(&mut project, n + 1, &channel.name);
     }
     if let Some(master) = &spec.master {
         if !mixer::copy_effects(&mut project, 0, &sources[master], 0) {
@@ -654,6 +713,48 @@ pub fn pattern_view(project: &Project, name: &str) -> Result<Vec<PatternNote>, S
                 .unwrap_or_else(|| "?".to_string()),
         })
         .collect())
+}
+
+// the song's four stems cut to the bars a loop or song comes from, saved next to the project, with their names and lengths
+fn cut_stems(
+    spec: &Loop,
+    stems: &StemsSpec,
+    out: &Path,
+    warnings: &mut Vec<String>,
+) -> Result<Vec<(String, String, f64)>, String> {
+    let folder = local_path(&stems.folder);
+    let session = rebuild::load_session(&folder)?;
+    let grid = session.grid;
+    if (grid.bpm - spec.tempo).abs() > grid.bpm * 0.005 {
+        warnings.push(format!(
+            "the song is {} bpm but the project is {} bpm, so the stems won't line up with the patterns",
+            grid.bpm, spec.tempo
+        ));
+    }
+    let start = grid.origin + (stems.from_bar - 1.0).max(0.0) * grid.bar_seconds();
+    let end = stems
+        .bars
+        .map_or(f64::MAX, |bars| start + bars * grid.bar_seconds());
+    std::fs::create_dir_all(out).map_err(|e| format!("can't create {}: {}", out.display(), e))?;
+    let mut found = Vec::new();
+    for stem in separate::STEMS {
+        let file = separate::stem_file(stem);
+        let source = folder.join(&file);
+        if !source.exists() {
+            warnings.push(format!("{} has no {}", stems.folder, file));
+            continue;
+        }
+        let cut = wav::read_wav(&source)?.cut(start, end);
+        let name = file.trim_end_matches(".wav").to_string();
+        let target = out.join(format!("{} - {}", file_name(&spec.name), file));
+        wav::write_wav(&target, &cut)?;
+        found.push((
+            name,
+            fl_path(&target.display().to_string()),
+            cut.info.duration_seconds(),
+        ));
+    }
+    Ok(found)
 }
 
 // the notes of a project's pattern found by name, exact first and then ignoring case

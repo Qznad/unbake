@@ -44,6 +44,7 @@ pub struct Sound {
 pub enum ChannelSource<'a> {
     Sample { path: String, root: u8 },
     Copy { from: &'a Project, block: Block },
+    Audio { path: String },
 }
 
 pub struct NewChannel<'a> {
@@ -69,6 +70,13 @@ pub struct NewClip {
     pub pattern: usize,
     pub start: u32,
     pub length: u32,
+    pub track: u16,
+}
+
+pub struct NewAudioClip {
+    pub channel: usize,
+    pub start: u32,
+    pub seconds: f64,
     pub track: u16,
 }
 
@@ -188,12 +196,15 @@ pub fn build(
 }
 
 // replaces a template's channels with new ones and fills it with named patterns, placed clips, markers and track names
+#[allow(clippy::too_many_arguments)]
 pub fn compose(
     template: &Project,
     new_channels: &[NewChannel],
     patterns: &[NewPattern],
     clips: &[NewClip],
+    audio: &[NewAudioClip],
     track_names: &[String],
+    muted: &[u16],
     bpm: f64,
     markers: &[Marker],
 ) -> Result<Built, String> {
@@ -209,12 +220,19 @@ pub fn compose(
         .find(|b| b.kind == SAMPLER)
         .ok_or("the template has no sampler channel to copy")?
         .clone();
+    let audio_model = blocks.iter().find(|b| b.kind == AUDIO_CLIP).cloned();
     let mut channel_events = Vec::new();
     for (n, channel) in new_channels.iter().enumerate() {
         let id = n as u16;
         let mut events = match &channel.source {
             ChannelSource::Sample { path, root } => {
                 channels::copy_channel(&project, &model, id, &channel.name, path, *root)
+            }
+            ChannelSource::Audio { path } => {
+                let audio_model = audio_model
+                    .as_ref()
+                    .ok_or("the template has no audio clip channel to copy for the stems")?;
+                channels::copy_channel(&project, audio_model, id, &channel.name, path, 60)
             }
             ChannelSource::Copy { from, block } => {
                 let mut copy = channels::copy_block(from, block, id, &channel.name);
@@ -262,7 +280,7 @@ pub fn compose(
 
     let (arrangement_start, playlist) = find_playlist(&project)?;
     let extra = clip_extra(template, &project, playlist, &mut warnings);
-    let items: Vec<Vec<u8>> = clips
+    let mut items: Vec<Vec<u8>> = clips
         .iter()
         .map(|clip| {
             item_bytes(
@@ -275,11 +293,27 @@ pub fn compose(
             )
         })
         .collect();
+    for clip in audio {
+        let length = (clip.seconds * bpm / 60.0 * ppq as f64).round() as u32;
+        items.push(item_bytes(
+            clip.channel as u16,
+            scale(clip.start),
+            length,
+            clip.track,
+            (-1f32).to_le_bytes(),
+            &extra,
+        ));
+    }
     let count = items.len();
     set_playlist(&mut project, playlist, items);
     add_markers(&mut project, playlist, markers, scale);
     for (track, name) in track_names.iter().enumerate() {
-        name_track(&mut project, arrangement_start, track as u32 + 1, name);
+        if !name.is_empty() {
+            name_track(&mut project, arrangement_start, track as u32 + 1, name);
+        }
+    }
+    for &track in muted {
+        mute_track(&mut project, arrangement_start, track as u32 + 1);
     }
 
     Ok(Built {

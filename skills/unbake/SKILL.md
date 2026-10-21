@@ -49,12 +49,14 @@ This is the path users liked: real producers' sounds playing the song's own fact
    - copied channels bring their mixer effects; set `effects: false` for a channel whose insert has filters that were automated in the reference (it comes out silent)
    - levels with `volume`: drums 80 to 85, hats 40 to 50, sub about 80, bass layer 50 to 60, pad 60 to 70, lead about 70
    - markers saying where the loop comes from, like "Drop loop (from bars 33-36)"
+   - `tracks` naming the playlist tracks after the instruments (Kick, Snare, Hats, Sub, Bass, Keys, Lead)
+   - `stems` with the transcribed folder and the loop's source bars (`from_bar`, `bars`), so the song's four stems sit muted under the loop and the user can unmute one to compare each part; keep the project at the song's tempo so they line up
 
 5. **Ask the user to listen.** Tell them which file to open, then ask three things: can every part be heard, how does it feel overall, and which part is weakest. Silent parts usually mean a volume of 0 or an automated filter in the copied channel or its effects.
 
 6. **Improve it.** The description is saved next to the project as json. Change only what the user pointed at and write it under a new name (v2, v3) so they can compare. Explain each change in music terms ("the bass now holds the root and pulses 8ths an octave up, the way the song's bar 36 does").
 
-7. **Then the whole song,** once the loop works: an intro, the song's sections from its markers, breaks without drums, and an outro, with the loop's patterns placed and varied in the playlist.
+7. **Then the whole song,** once the loop works. Use `song_overview` to find the song's repeating cycle (often 8 bars of chords) and how each stretch differs: where the drums, hats, bass and lead come in and drop out, breakdowns with a kick only, builds without a snare. Keep the loop's channels and patterns, split them so each cycle starts on the song's first chord, add the few patterns the sections need (sparser kicks, other hat rhythms, fills), and place them so project bar 1 is song bar 1. Name the sections with markers that say what changes, and add `stems` from bar 1, so the whole song lines up under the arrangement. Write it as a new project next to the loop.
 
 8. **Explain the song** as a short lesson: tempo and key and its notes, the chord progression in plain names, what the bass, drums and melody do, which parts came from the song and which from the reference, and what to try changing.
 
