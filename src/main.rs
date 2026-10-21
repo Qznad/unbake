@@ -28,6 +28,7 @@ mod synth;
 mod theory;
 mod tidy;
 mod tools;
+mod views;
 
 use audio::wav::Wav;
 use clap::{Args, Parser, Subcommand};
@@ -100,6 +101,44 @@ enum Command {
         from_bar: u32,
         #[arg(long, default_value_t = 4, help = "how many bars")]
         bars: u32,
+    },
+
+    #[command(
+        about = "one line per bar of a transcribed folder: its section, kick, snare, hat, bass and other note counts and the chord heard"
+    )]
+    Overview { folder: PathBuf },
+
+    #[command(
+        about = "show a part as 16 steps per bar: drums as hit strings compose takes, pitched parts as the note on each step"
+    )]
+    Grid {
+        folder: PathBuf,
+        name: String,
+        #[arg(long, default_value_t = 1, help = "first bar, counting from 1")]
+        from_bar: u32,
+        #[arg(long, default_value_t = 4, help = "how many bars")]
+        bars: u32,
+    },
+
+    #[command(
+        about = "the note names sounding in the other and bass stems for each bar or span of bars, with a chord name like Am9"
+    )]
+    Harmony {
+        folder: PathBuf,
+        #[arg(long, default_value_t = 1, help = "first bar, counting from 1")]
+        from_bar: u32,
+        #[arg(
+            long,
+            default_value_t = 9999,
+            help = "how many bars, the rest of the song by default"
+        )]
+        bars: u32,
+        #[arg(
+            long,
+            default_value_t = 0,
+            help = "bars per chord, or 0 to start a new chord where the bass note changes"
+        )]
+        per: u32,
     },
 
     #[command(about = "draw a piano roll png of up to four parts or candidates over each other")]
@@ -433,6 +472,68 @@ fn run(command: Command) -> Result<(), String> {
             }
             if let Some(finding) = &view.finding {
                 print_findings(std::slice::from_ref(finding));
+            }
+            Ok(())
+        }
+        Command::Overview { folder } => {
+            println!("  bar  section     kick snare  hat  bass other  chord");
+            for line in views::overview(&folder)? {
+                println!(
+                    "  {:>3}  {:<10} {:>4} {:>5} {:>4} {:>5} {:>5}  {}",
+                    line.bar,
+                    line.section.as_deref().unwrap_or(""),
+                    line.kick,
+                    line.snare,
+                    line.hat,
+                    line.bass,
+                    line.other,
+                    line.chord.as_deref().unwrap_or("")
+                );
+            }
+            Ok(())
+        }
+        Command::Grid {
+            folder,
+            name,
+            from_bar,
+            bars,
+        } => {
+            for bar in views::grid(&folder, &name, from_bar, bars)? {
+                for row in &bar.rows {
+                    let cells = match (&row.hits, &row.notes) {
+                        (Some(hits), _) => hits.clone(),
+                        (_, Some(notes)) => notes
+                            .iter()
+                            .map(|n| format!("{:<4}", n))
+                            .collect::<Vec<_>>()
+                            .join(""),
+                        _ => String::new(),
+                    };
+                    println!("  bar {:>3}  {:<6} {}", bar.bar, row.part, cells);
+                }
+            }
+            Ok(())
+        }
+        Command::Harmony {
+            folder,
+            from_bar,
+            bars,
+            per,
+        } => {
+            for span in views::harmony(&folder, from_bar, bars, per)? {
+                let tones: Vec<String> = span
+                    .tones
+                    .iter()
+                    .map(|t| format!("{} {}%", t.note, t.percent))
+                    .collect();
+                println!(
+                    "  bars {:>3}-{:<3}  bass {:<3} {:<9} {}",
+                    span.from_bar,
+                    span.from_bar + span.bars - 1,
+                    span.bass.as_deref().unwrap_or("-"),
+                    span.chord.as_deref().unwrap_or(""),
+                    tones.join(", ")
+                );
             }
             Ok(())
         }

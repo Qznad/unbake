@@ -34,11 +34,12 @@ This is the path users liked: real producers' sounds playing the song's own fact
 
 2. **Pick a reference.** Call `references` with a tempo range around the song's (allow double or half for half-time genres) or with words like `break`. Prefer demo songs, which are full tracks, over templates, which are empty. Call `flp_info` on the best one or two and propose which channels to borrow for drums, sub, bass, pad and lead. Avoid channels marked `volume 0, automated` (they were faded in by automation; if you use one anyway it is reset to 78%) and `not installed`. Use `reference_pattern` to read how the producer wrote a groove, bassline or break pattern.
 
-3. **Read the song's main section.** The drop or chorus from the sections, usually 4 bars. Call `inspect_part` for `drums`, `bass`, `chords` and `melody` over those bars. Look for:
-   - drums: where the kicks and snares land, as a 16-step grid per bar
-   - bass: the root of each bar and its rhythm (held, 8th pulse, octave bounce); ignore smeared long notes and octave ghosts
-   - chords: the held chords and their extra notes (a Cm with a D)
-   - melody: the notes on the main grid (often 8ths), turned into a clean 2 to 4 bar motif that fits the chords
+3. **Read the song's main section.** Call `song_overview` to see, bar by bar, where the drums, bass and other parts play and which chord sounds, and pick the drop or chorus, usually 4 or 8 bars. Then:
+   - drums: `part_grid` with `drums` gives kick, snare and hat as hit strings you can put straight into `grids`
+   - bass: `part_grid` with `bass` shows the root of each bar and its rhythm (held, 8th pulse, octave bounce); ignore smeared long notes and octave ghosts
+   - chords: `harmony` gives the real chords with their extensions (Am9, Gm11, Bbmaj9) and the notes in each; voice the loop's chords from those notes. The name follows the bass, so a walking bass under one held chord shows as several names
+   - melody: `part_grid` with `melody` shows the note on each step; keep the notes on the main grid (often 8ths) and turn them into a clean 2 to 4 bar motif that fits the chords
+   - `inspect_part` lists exact note lengths and velocities when you need them
 
 4. **Write the loop** with `compose_loop`, into `Documents/Image-Line/FL Studio/Projects/unbake/<song> loop` so it opens straight in FL. Make it the way a producer would:
    - short patterns (1 bar drums, 2 bar breaks, 4 bar chords, bass and lead) repeated in the playlist, each part on its own track

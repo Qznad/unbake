@@ -155,7 +155,7 @@ pub fn write(folder: &Path, mut options: Options) -> Result<Report, String> {
 }
 
 // the notes of a part, the chosen melody, or a melody candidate, by name
-fn notes_named(session: &Session, name: &str) -> Result<Vec<Note>, String> {
+pub fn notes_named(session: &Session, name: &str) -> Result<Vec<Note>, String> {
     match name {
         "drums" => Ok(session.drums.clone()),
         "bass" => Ok(session.bass.clone()),

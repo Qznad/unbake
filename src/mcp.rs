@@ -4,6 +4,7 @@ use crate::flp;
 use crate::rebuild;
 use crate::separate;
 use crate::tools;
+use crate::views;
 use serde_json::{Value, json};
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
@@ -203,6 +204,39 @@ fn tools() -> Value {
             }
         },
         {
+            "name": "song_overview",
+            "description": "One line per bar of a transcribed folder: the section starting there, how many kick, snare, hat, bass and other-stem notes it has, and the chord heard (like Am9, from the bass note and the notes above it). Use it to find where parts come in and drop out, and where the main section is.",
+            "inputSchema": { "type": "object", "properties": { "folder": folder }, "required": ["folder"] }
+        },
+        {
+            "name": "part_grid",
+            "description": "A part of a transcribed folder as 16 steps per bar. Drums come as kick, snare and hat hit strings (X loud, x normal, o soft, g ghost, . rest), the same format compose_loop's grids take. Pitched parts (bass, melody, chords, leftover or a melody candidate) come as the note starting on each step, the loudest when several do.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": folder,
+                    "name": name,
+                    "from_bar": from_bar,
+                    "bars": { "type": "integer", "description": "how many bars, default 4" }
+                },
+                "required": ["folder", "name"]
+            }
+        },
+        {
+            "name": "harmony",
+            "description": "For each bar or span of bars of a transcribed folder, the note names sounding in the other stem as percentages (weighted by length and loudness), the bass note, and a chord name with its extensions (Am9, Gm11, Bbmaj9) built from them. Richer than the chords finding, which only names triads. The chord is named from the bass note, so when the bass walks under a held chord the name follows the bass (Cm9 over an Eb bass reads Ebmaj13, the same notes); check the tones. Use it to voice the chords of a loop.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": folder,
+                    "from_bar": from_bar,
+                    "bars": { "type": "integer", "description": "how many bars, the rest of the song by default" },
+                    "per": { "type": "integer", "description": "bars per chord; 0, the default, starts a new chord where the bass note changes" }
+                },
+                "required": ["folder"]
+            }
+        },
+        {
             "name": "flp_info",
             "description": "List what is inside an FL Studio project: version, title, tempo, every channel with its plugin or sample, mixer insert, volume and whether it is automation, the patterns with their note counts, and each mixer insert's effect chain. Paths may start with %FLStudioFactoryData%.",
             "inputSchema": {
@@ -280,6 +314,20 @@ fn call_tool(params: &Value) -> Value {
         "choose_melody" => choose_tool(args).and_then(text),
         "inspect_part" => inspect_tool(args).and_then(text),
         "piano_roll" => piano_roll_tool(args),
+        "song_overview" => path_arg(args, "folder")
+            .and_then(|folder| views::overview(&folder))
+            .and_then(text),
+        "part_grid" => grid_tool(args).and_then(text),
+        "harmony" => path_arg(args, "folder")
+            .and_then(|folder| {
+                views::harmony(
+                    &folder,
+                    number(args, "from_bar", 1),
+                    number(args, "bars", 9999),
+                    number(args, "per", 0),
+                )
+            })
+            .and_then(text),
         "write_flp" => write_tool(args).and_then(text),
         "flp_info" => factory_arg(args, "file")
             .and_then(|file| flp::events::read(&file))
@@ -320,6 +368,20 @@ fn reference_pattern(args: &Value) -> Result<Vec<compose::PatternNote>, String> 
         .as_str()
         .ok_or("missing argument pattern".to_string())?;
     compose::pattern_view(&project, name)
+}
+
+// a part of a transcribed folder as 16 steps per bar
+fn grid_tool(args: &Value) -> Result<Vec<views::GridBar>, String> {
+    let folder = path_arg(args, "folder")?;
+    let name = args["name"]
+        .as_str()
+        .ok_or("missing argument name".to_string())?;
+    views::grid(
+        &folder,
+        name,
+        number(args, "from_bar", 1),
+        number(args, "bars", 4),
+    )
 }
 
 // writes a loop description into a folder as an fl studio project
@@ -538,7 +600,7 @@ mod tests {
     #[test]
     fn lists_tools() {
         let reply = handle(&json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).unwrap();
-        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 15);
+        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 18);
         let call = handle(&json!({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": { "name": "nope", "arguments": {} }
