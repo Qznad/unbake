@@ -44,7 +44,7 @@ fn handle(request: &Value) -> Option<Value> {
         "initialize" => json!({
             "protocolVersion": request["params"]["protocolVersion"].as_str().unwrap_or("2025-06-18"),
             "capabilities": { "tools": {} },
-            "serverInfo": { "name": "unbake", "version": env!("CARGO_PKG_VERSION") },
+            "serverInfo": { "name": "unbake", "version": doctor::VERSION },
             "instructions": instructions()
         }),
         "ping" => json!({}),

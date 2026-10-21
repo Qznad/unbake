@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 const FACTORY: &str = "%FLStudioFactoryData%";
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Loop {
     pub name: String,
     pub tempo: f64,
@@ -40,6 +41,7 @@ pub struct Loop {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StemsSpec {
     pub folder: String,
     #[serde(default = "one")]
@@ -51,6 +53,7 @@ pub struct StemsSpec {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ChannelSpec {
     pub name: String,
     #[serde(default)]
@@ -66,12 +69,14 @@ pub struct ChannelSpec {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CopySpec {
     pub project: String,
     pub channel: String,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PatternSpec {
     pub name: String,
     #[serde(default = "one")]
@@ -85,6 +90,7 @@ pub struct PatternSpec {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PatternCopy {
     pub project: String,
     pub pattern: String,
@@ -98,6 +104,7 @@ pub struct PatternCopy {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NoteSpec {
     pub channel: String,
     #[serde(default = "one")]
@@ -113,6 +120,7 @@ pub struct NoteSpec {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GridSpec {
     pub channel: String,
     pub hits: String,
@@ -130,6 +138,7 @@ pub enum KeySpec {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ClipSpec {
     pub pattern: String,
     pub track: u16,
@@ -140,6 +149,7 @@ pub struct ClipSpec {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MarkerSpec {
     pub bar: f64,
     pub name: String,
@@ -885,6 +895,22 @@ mod tests {
         assert_eq!(summary.channels[1].name, "Bass");
         assert_eq!(summary.tempo, Some(170.0));
         assert_eq!(summary.patterns[0].notes, 4);
+    }
+
+    // a misspelled or unknown setting is refused with its name instead of being ignored
+    #[test]
+    fn refuses_unknown_settings() {
+        let error = serde_json::from_str::<Loop>(
+            r#"{ "name": "x", "tempo": 120, "channels": [], "patterns": [], "stemz": {} }"#,
+        )
+        .err()
+        .unwrap()
+        .to_string();
+        assert!(error.contains("stemz"));
+        let nested = serde_json::from_str::<Loop>(
+            r#"{ "name": "x", "tempo": 120, "channels": [ { "name": "Kick", "sampel": "k.wav" } ], "patterns": [] }"#,
+        );
+        assert!(nested.err().unwrap().to_string().contains("sampel"));
     }
 
     // note names follow c4 as 60 with sharps and flats

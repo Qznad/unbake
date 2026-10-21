@@ -37,7 +37,7 @@ use std::path::{Path, PathBuf};
 #[derive(Parser)]
 #[command(
     name = "unbake",
-    version,
+    version = doctor::VERSION,
     about = "turn a song into an editable fl studio project"
 )]
 struct Cli {

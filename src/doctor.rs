@@ -19,17 +19,34 @@ pub struct Check {
     pub fix: Option<String>,
 }
 
+pub const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("UNBAKE_BUILD"), ")");
+
 // checks every outside program unbake runs, and says how to install or fix what is missing
 pub fn run() -> Vec<Check> {
     let uv = find_program("uv");
     let gpu = gpu_name();
     vec![
+        this_build(),
         ffmpeg(),
         demucs(uv.as_deref(), gpu.as_deref()),
         basic_pitch(),
         gpu_check(gpu.as_deref()),
         uv_check(uv.as_deref()),
     ]
+}
+
+// which build of unbake is answering and where it runs from, so an old copy is easy to spot
+fn this_build() -> Check {
+    let path = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "an unknown path".to_string());
+    check(
+        "unbake",
+        Status::Ok,
+        format!("{}, running from {}", VERSION, path),
+        "everything; an old copy can ignore newer settings".to_string(),
+        None,
+    )
 }
 
 // ffmpeg, which opens every audio format other than wav
