@@ -563,11 +563,17 @@ fn run(command: Command) -> Result<(), String> {
             }
             for group in &parts.groups {
                 let bars: Vec<String> = group.bars.iter().map(|b| b.to_string()).collect();
+                let source = match &group.variation_of {
+                    Some(other) => format!("its own notes, gaps filled from {}", other),
+                    None if group.bars.len() > 1 => "the notes its repeats agree on".to_string(),
+                    None => "heard once, raw".to_string(),
+                };
                 println!(
-                    "{} (bars {}): {} notes the repeats agree on",
+                    "{} (bars {}): {} notes, {}",
                     group.label,
                     bars.join(", "),
-                    group.notes.len()
+                    group.notes.len(),
+                    source
                 );
                 for bar in 1..=parts.bars_per_part {
                     let mut cells = vec![".".to_string(); 16];

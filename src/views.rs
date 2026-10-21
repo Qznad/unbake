@@ -10,7 +10,8 @@ const NAMES: [&str; 12] = [
 ];
 const PRESENT: f64 = 0.08;
 const THIRD: f64 = 0.04;
-const SAME_PART: f64 = 0.5;
+const SAME_PART: f64 = 0.3;
+const VARIATION: f64 = 0.15;
 
 #[derive(Serialize)]
 pub struct BarLine {
@@ -51,6 +52,7 @@ pub struct PartLine {
 pub struct PartGroup {
     pub label: String,
     pub bars: Vec<u32>,
+    pub variation_of: Option<String>,
     pub notes: Vec<tools::NoteView>,
 }
 
@@ -163,8 +165,10 @@ pub fn parts(
 ) -> Result<Parts, String> {
     let session = rebuild::load_session(folder)?;
     let mut notes = tools::notes_named(&session, name)?;
-    if name != "drums" && name != "bass" && name != "chords" && name != "leftover" {
-        notes = crate::tidy::melody(&notes);
+    match name {
+        "bass" => notes = crate::tidy::melody(&on_roots(&notes)),
+        "drums" | "chords" | "leftover" => {}
+        _ => notes = crate::tidy::melody(&notes),
     }
     let length = bars_per_part.max(1) * BAR;
     let first = from_bar.max(1) - 1;
@@ -250,23 +254,56 @@ pub fn parts(
         })
         .collect();
 
+    let voted: Vec<Vec<Note>> = groups
+        .iter()
+        .map(|members| {
+            agreed(
+                members.iter().map(|&m| stretches[m].1.as_slice()).collect(),
+                !matches!(name, "drums" | "chords" | "leftover"),
+            )
+        })
+        .collect();
     let groups = groups
         .iter()
         .enumerate()
-        .map(|(g, members)| PartGroup {
-            label: letter(g),
-            bars: members.iter().map(|&m| stretches[m].0).collect(),
-            notes: agreed(members.iter().map(|&m| stretches[m].1.as_slice()).collect())
-                .iter()
-                .map(|n| tools::NoteView {
-                    bar: n.start / BAR + 1,
-                    step: n.start % BAR / STEP + 1,
-                    note: crate::music::note_name(n.key),
-                    key: n.key,
-                    steps: n.length.div_ceil(STEP),
-                    velocity: n.velocity,
+        .map(|(g, members)| {
+            let backbone = (members.len() == 1 && !matches!(name, "bass" | "drums"))
+                .then(|| {
+                    groups
+                        .iter()
+                        .enumerate()
+                        .filter(|&(other, m)| other != g && m.len() > 1)
+                        .map(|(other, m)| {
+                            (
+                                other,
+                                likeness(&stretches[members[0]].1, &stretches[m[0]].1),
+                            )
+                        })
+                        .filter(|&(_, l)| l >= VARIATION)
+                        .max_by(|a, b| a.1.total_cmp(&b.1))
+                        .map(|(other, _)| other)
                 })
-                .collect(),
+                .flatten();
+            let notes = match backbone {
+                Some(other) => filled(&voted[g], &voted[other]),
+                None => voted[g].clone(),
+            };
+            PartGroup {
+                label: letter(g),
+                bars: members.iter().map(|&m| stretches[m].0).collect(),
+                variation_of: backbone.map(letter),
+                notes: notes
+                    .iter()
+                    .map(|n| tools::NoteView {
+                        bar: n.start / BAR + 1,
+                        step: n.start % BAR / STEP + 1,
+                        note: crate::music::note_name(n.key),
+                        key: n.key,
+                        steps: n.length.div_ceil(STEP),
+                        velocity: n.velocity,
+                    })
+                    .collect(),
+            }
         })
         .collect();
 
@@ -293,8 +330,8 @@ fn likeness(a: &[Note], b: &[Note]) -> f64 {
     2.0 * x.intersection(&y).count() as f64 / (x.len() + y.len()) as f64
 }
 
-// the notes at least half the stretches agree on, each with its most common octave, length and loudness
-fn agreed(stretches: Vec<&[Note]>) -> Vec<Note> {
+// the notes a third of the stretches agree on (at least two), each with its most common octave, length and loudness, keeping the most voted note per step for a line
+fn agreed(stretches: Vec<&[Note]>, one_per_step: bool) -> Vec<Note> {
     let mut seen: HashMap<(u32, u8, Part), Vec<Note>> = HashMap::new();
     for stretch in &stretches {
         let mut here = std::collections::HashSet::new();
@@ -304,10 +341,26 @@ fn agreed(stretches: Vec<&[Note]>) -> Vec<Note> {
             }
         }
     }
-    let needed = stretches.len().div_ceil(2);
-    let mut out: Vec<Note> = seen
+    let needed = match stretches.len() {
+        1 => 1,
+        n => n.div_ceil(3).max(2),
+    };
+    let mut voted: Vec<Vec<Note>> = seen
         .into_values()
         .filter(|notes| notes.len() >= needed)
+        .collect();
+    if one_per_step {
+        let mut best: HashMap<(u32, Part), Vec<Note>> = HashMap::new();
+        for notes in voted {
+            let place = (notes[0].start / STEP, notes[0].part);
+            if best.get(&place).is_none_or(|b| notes.len() > b.len()) {
+                best.insert(place, notes);
+            }
+        }
+        voted = best.into_values().collect();
+    }
+    let mut out: Vec<Note> = voted
+        .into_iter()
         .map(|notes| {
             let mut keys: HashMap<u8, usize> = HashMap::new();
             for n in &notes {
@@ -329,6 +382,53 @@ fn agreed(stretches: Vec<&[Note]>) -> Vec<Note> {
             }
         })
         .collect();
+    out.sort_by_key(|n| (n.start, n.part, n.key));
+    out
+}
+
+// a bassline with every note that is not its bar's root or fifth moved to the root at the nearest octave
+fn on_roots(notes: &[Note]) -> Vec<Note> {
+    let mut weight: HashMap<(u32, usize), f64> = HashMap::new();
+    for note in notes {
+        *weight
+            .entry((note.start / BAR, note.key as usize % 12))
+            .or_default() += note.length as f64 * note.velocity as f64;
+    }
+    notes
+        .iter()
+        .map(|note| {
+            let bar = note.start / BAR;
+            let root = (0..12)
+                .max_by(|&a, &b| {
+                    let w = |pc: usize| weight.get(&(bar, pc)).copied().unwrap_or(0.0);
+                    w(a).total_cmp(&w(b))
+                })
+                .unwrap_or(note.key as usize % 12);
+            let pc = note.key as usize % 12;
+            if pc == root || pc == (root + 7) % 12 {
+                return *note;
+            }
+            let down = (pc + 12 - root) % 12;
+            let key = if down <= 6 {
+                note.key.saturating_sub(down as u8)
+            } else {
+                (note.key + (12 - down) as u8).min(127)
+            };
+            Note { key, ..*note }
+        })
+        .collect()
+}
+
+// a one-off stretch's own notes with its empty steps filled from the part it varies, which was heard more clearly
+fn filled(own: &[Note], backbone: &[Note]) -> Vec<Note> {
+    let taken: std::collections::HashSet<u32> = own.iter().map(|n| n.start / STEP).collect();
+    let mut out: Vec<Note> = own.to_vec();
+    out.extend(
+        backbone
+            .iter()
+            .filter(|n| !taken.contains(&(n.start / STEP)))
+            .copied(),
+    );
     out.sort_by_key(|n| (n.start, n.part, n.key));
     out
 }

@@ -35,6 +35,8 @@ pub struct Loop {
     pub stems: Option<StemsSpec>,
     #[serde(default)]
     pub tracks: Vec<String>,
+    #[serde(default)]
+    pub mute: Vec<u16>,
 }
 
 #[derive(Deserialize)]
@@ -404,7 +406,7 @@ pub fn write(spec: &Loop, out: &Path, template: Option<&Path>) -> Result<Written
         track_names[n] = name.clone();
     }
     let mut audio = Vec::new();
-    let mut muted = Vec::new();
+    let mut muted: Vec<u16> = spec.mute.iter().map(|t| t.max(&1) - 1).collect();
     if let Some(stems) = &spec.stems {
         let first_track = track_names.len() as u16 + 1;
         for (n, (name, path, seconds)) in cut_stems(spec, stems, out, &mut warnings)?
