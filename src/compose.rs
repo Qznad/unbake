@@ -88,6 +88,32 @@ pub struct PatternSpec {
     pub grids: Vec<GridSpec>,
     #[serde(default)]
     pub copy: Option<PatternCopy>,
+    #[serde(default)]
+    pub from_parts: Option<FromParts>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FromParts {
+    pub folder: String,
+    pub part: String,
+    pub letter: String,
+    #[serde(default = "one")]
+    pub from_bar: f64,
+    #[serde(default = "eight_bars")]
+    pub bars: f64,
+    #[serde(default)]
+    pub to_bar: Option<u32>,
+    #[serde(default)]
+    pub channel: Option<String>,
+    #[serde(default)]
+    pub channels: HashMap<String, String>,
+    #[serde(default)]
+    pub transpose: i32,
+    #[serde(default)]
+    pub low: Option<KeySpec>,
+    #[serde(default)]
+    pub high: Option<KeySpec>,
 }
 
 #[derive(Deserialize)]
@@ -147,6 +173,8 @@ pub struct ClipSpec {
     pub bar: f64,
     #[serde(default = "first")]
     pub times: u32,
+    #[serde(default)]
+    pub at: Vec<f64>,
 }
 
 #[derive(Deserialize)]
@@ -207,6 +235,11 @@ fn eight() -> u32 {
 // a default of one bar, step or step length
 fn one() -> f64 {
     1.0
+}
+
+// eight bars, the usual chord cycle a song_parts letter spans
+fn eight_bars() -> f64 {
+    8.0
 }
 
 // a clip placed once
@@ -337,6 +370,15 @@ pub fn write(spec: &Loop, out: &Path, template: Option<&Path>) -> Result<Written
                 });
             }
         }
+        if let Some(from) = &pattern.from_parts {
+            if pattern.bars < from.bars {
+                warnings.push(format!(
+                    "pattern {} is {} bars but its letter spans {}, so the rest is cut off",
+                    pattern.name, pattern.bars, from.bars
+                ));
+            }
+            notes.extend(lettered_notes(from, &channel_index)?);
+        }
         if let Some(copy) = &pattern.copy {
             let from = &sources[&copy.project];
             let mut mapping = HashMap::new();
@@ -389,17 +431,17 @@ pub fn write(spec: &Loop, out: &Path, template: Option<&Path>) -> Result<Written
             })
             .collect()
     } else {
-        spec.playlist
-            .iter()
-            .map(|c| {
-                Ok((
-                    pattern_index(&c.pattern)?,
-                    c.track.max(1) - 1,
-                    c.bar,
-                    c.times,
-                ))
-            })
-            .collect::<Result<_, String>>()?
+        let mut placed = Vec::new();
+        for c in &spec.playlist {
+            let pattern = pattern_index(&c.pattern)?;
+            let track = c.track.max(1) - 1;
+            if c.at.is_empty() {
+                placed.push((pattern, track, c.bar, c.times));
+            } else {
+                placed.extend(c.at.iter().map(|&bar| (pattern, track, bar, c.times)));
+            }
+        }
+        placed
     };
     let mut clips = Vec::new();
     let mut track_names: Vec<String> = Vec::new();
@@ -715,6 +757,74 @@ fn installed_plugins() -> Option<std::collections::HashSet<String>> {
     (!names.is_empty()).then_some(names)
 }
 
+// the notes one song_parts letter agrees on, moved into a register and put on the loop's channels
+fn lettered_notes(
+    from: &FromParts,
+    channel_index: &dyn Fn(&str) -> Result<usize, String>,
+) -> Result<Vec<NewNote>, String> {
+    let parts = crate::views::parts(
+        &local_path(&from.folder),
+        &from.part,
+        from.from_bar.max(1.0) as u32,
+        from.bars.max(1.0) as u32,
+        from.to_bar,
+    )?
+    .only_letter(Some(&from.letter));
+    let group = parts.groups.first().ok_or_else(|| {
+        format!(
+            "{} has no letter {} for {} from bar {} by {}",
+            from.folder, from.letter, from.part, from.from_bar, from.bars
+        )
+    })?;
+    let low = match &from.low {
+        Some(key) => Some(key_of(key)?),
+        None => None,
+    };
+    let high = match &from.high {
+        Some(key) => Some(key_of(key)?),
+        None => None,
+    };
+    let drum = |key: u8| match key {
+        36 => "kick",
+        38 => "snare",
+        _ => "hat",
+    };
+    let mut notes = Vec::new();
+    for note in &group.notes {
+        let channel = if from.part == "drums" {
+            match from.channels.get(drum(note.key)) {
+                Some(name) => channel_index(name)?,
+                None => continue,
+            }
+        } else {
+            let name = from
+                .channel
+                .as_deref()
+                .ok_or_else(|| format!("from_parts for {} needs a channel", from.part))?;
+            channel_index(name)?
+        };
+        let mut key = (note.key as i32 + from.transpose).clamp(0, 127);
+        if let (Some(low), Some(high)) = (low, high) {
+            if high >= low + 11 {
+                while key < low as i32 {
+                    key += 12;
+                }
+                while key > high as i32 {
+                    key -= 12;
+                }
+            }
+        }
+        notes.push(NewNote {
+            channel,
+            start: tick(note.bar as f64, note.step as f64),
+            length: note.steps.max(1) * STEP,
+            key: if from.part == "drums" { 60 } else { key as u8 },
+            velocity: note.velocity.min(127),
+        });
+    }
+    Ok(notes)
+}
+
 // the notes of a project's pattern with bars and steps counted from 1 and the channel each plays on
 pub fn pattern_view(project: &Project, name: &str) -> Result<Vec<PatternNote>, String> {
     let names: HashMap<u16, String> = info::summarize(project)
@@ -926,6 +1036,25 @@ mod tests {
             r#"{ "name": "x", "tempo": 120, "channels": [ { "name": "Kick", "sampel": "k.wav" } ], "patterns": [] }"#,
         );
         assert!(nested.err().unwrap().to_string().contains("sampel"));
+    }
+
+    // a clip with a list of bars is placed once at each of them
+    #[test]
+    fn places_at_listed_bars() {
+        let spec: Loop = serde_json::from_str(
+            r#"{
+                "name": "listed bars",
+                "tempo": 120,
+                "bars": 16,
+                "channels": [ { "name": "Kick", "sample": "C:\\kick.wav" } ],
+                "patterns": [ { "name": "Kick", "grids": [ { "channel": "Kick", "hits": "x..............." } ] } ],
+                "playlist": [ { "pattern": "Kick", "track": 1, "at": [1, 5, 13] } ]
+            }"#,
+        )
+        .unwrap();
+        let dir = std::env::temp_dir().join("unbake_listed_bars_test");
+        let written = write(&spec, &dir, None).unwrap();
+        assert_eq!(written.clips, 3);
     }
 
     // note names follow c4 as 60 with sharps and flats
