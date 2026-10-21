@@ -1,4 +1,5 @@
 use crate::audio::wav;
+use crate::combine;
 use crate::flp::build::{
     self, ChannelSource, NewAudioClip, NewChannel, NewClip, NewNote, NewPattern,
 };
@@ -18,14 +19,16 @@ use std::path::{Path, PathBuf};
 const FACTORY: &str = "%FLStudioFactoryData%";
 const SUMMARY_CHANNELS: usize = 8;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Loop {
     pub name: String,
     pub tempo: f64,
     #[serde(default = "eight")]
     pub bars: u32,
+    #[serde(default)]
     pub channels: Vec<ChannelSpec>,
+    #[serde(default)]
     pub patterns: Vec<PatternSpec>,
     #[serde(default)]
     pub playlist: Vec<ClipSpec>,
@@ -39,9 +42,25 @@ pub struct Loop {
     pub tracks: Vec<String>,
     #[serde(default)]
     pub mute: Vec<u16>,
+    #[serde(default)]
+    pub sections: Vec<SectionSpec>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct SectionSpec {
+    pub name: String,
+    pub project: String,
+    pub at: Vec<f64>,
+    #[serde(default)]
+    pub bars: Option<f64>,
+    #[serde(default)]
+    pub first_only: Vec<String>,
+    #[serde(default)]
+    pub last_only: Vec<String>,
+}
+
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct StemsSpec {
     pub folder: String,
@@ -53,7 +72,7 @@ pub struct StemsSpec {
     pub at_bar: f64,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ChannelSpec {
     pub name: String,
@@ -69,14 +88,14 @@ pub struct ChannelSpec {
     pub volume: Option<u32>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct CopySpec {
     pub project: String,
     pub channel: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct PatternSpec {
     pub name: String,
@@ -92,7 +111,7 @@ pub struct PatternSpec {
     pub from_parts: Option<FromParts>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct FromParts {
     pub folder: String,
@@ -116,7 +135,7 @@ pub struct FromParts {
     pub high: Option<KeySpec>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct PatternCopy {
     pub project: String,
@@ -130,7 +149,7 @@ pub struct PatternCopy {
     pub bars: Option<f64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct NoteSpec {
     pub channel: String,
@@ -146,7 +165,7 @@ pub struct NoteSpec {
     pub velocity: u8,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct GridSpec {
     pub channel: String,
@@ -157,14 +176,14 @@ pub struct GridSpec {
     pub key: Option<KeySpec>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(untagged)]
 pub enum KeySpec {
     Number(u8),
     Name(String),
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ClipSpec {
     pub pattern: String,
@@ -175,9 +194,13 @@ pub struct ClipSpec {
     pub times: u32,
     #[serde(default)]
     pub at: Vec<f64>,
+    #[serde(default)]
+    pub bars: Option<f64>,
+    #[serde(default)]
+    pub from_bar: Option<f64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct MarkerSpec {
     pub bar: f64,
@@ -264,6 +287,15 @@ pub fn write(spec: &Loop, out: &Path, template: Option<&Path>) -> Result<Written
         None => events::parse(crate::rebuild::BUILT_IN_TEMPLATE)?,
     };
     let mut warnings = Vec::new();
+    let combined;
+    let spec = if spec.sections.is_empty() {
+        spec
+    } else {
+        let (expanded, found) = combine::expand(spec, out)?;
+        warnings.extend(found);
+        combined = expanded;
+        &combined
+    };
 
     let mut sources: HashMap<String, Project> = HashMap::new();
     let wanted = spec
@@ -278,7 +310,7 @@ pub fn write(spec: &Loop, out: &Path, template: Option<&Path>) -> Result<Written
         );
     for project in wanted {
         if !sources.contains_key(project) {
-            let read = events::read(&local_path(project))
+            let read = events::read(&project_path(project, out))
                 .map_err(|e| format!("can't read {}: {}", project, e))?;
             sources.insert(project.clone(), read);
         }
@@ -421,38 +453,35 @@ pub fn write(spec: &Loop, out: &Path, template: Option<&Path>) -> Result<Written
             .position(|p| p.name == name)
             .ok_or_else(|| format!("no pattern called {}", name))
     };
-    let placed: Vec<(usize, u16, f64, u32)> = if spec.playlist.is_empty() {
-        spec.patterns
-            .iter()
-            .enumerate()
-            .map(|(n, p)| {
-                let times = (spec.bars as f64 / p.bars.max(0.25)).ceil() as u32;
-                (n, n as u16, 1.0, times)
-            })
-            .collect()
-    } else {
+    let playlist = default_playlist(spec);
+    let placed: Vec<(usize, u16, f64, &ClipSpec)> = {
         let mut placed = Vec::new();
-        for c in &spec.playlist {
+        for c in &playlist {
             let pattern = pattern_index(&c.pattern)?;
             let track = c.track.max(1) - 1;
             if c.at.is_empty() {
-                placed.push((pattern, track, c.bar, c.times));
+                placed.push((pattern, track, c.bar, c));
             } else {
-                placed.extend(c.at.iter().map(|&bar| (pattern, track, bar, c.times)));
+                placed.extend(c.at.iter().map(|&bar| (pattern, track, bar, c)));
             }
         }
         placed
     };
     let mut clips = Vec::new();
     let mut track_names: Vec<String> = Vec::new();
-    for &(pattern, track, bar, times) in &placed {
-        let length = (spec.patterns[pattern].bars * BAR as f64).round() as u32;
-        for n in 0..times.max(1) {
+    for &(pattern, track, bar, clip) in &placed {
+        let full = spec.patterns[pattern].bars;
+        let bars = clip.bars.unwrap_or(full);
+        let length = (bars * BAR as f64).round() as u32;
+        let cut = (clip.from_bar.is_some() || bars < full)
+            .then(|| tick(clip.from_bar.unwrap_or(1.0), 1.0));
+        for n in 0..clip.times.max(1) {
             clips.push(NewClip {
                 pattern,
                 start: tick(bar, 1.0) + n * length,
                 length,
                 track,
+                cut,
             });
         }
         let track = track as usize;
@@ -560,6 +589,36 @@ pub fn write(spec: &Loop, out: &Path, template: Option<&Path>) -> Result<Written
         clips: built.clips,
         warnings,
     })
+}
+
+// the playlist a description asks for, or every pattern repeated over the bars on its own track when it gives none
+pub fn default_playlist(spec: &Loop) -> Vec<ClipSpec> {
+    if !spec.playlist.is_empty() {
+        return spec.playlist.clone();
+    }
+    spec.patterns
+        .iter()
+        .enumerate()
+        .map(|(n, p)| ClipSpec {
+            pattern: p.name.clone(),
+            track: n as u16 + 1,
+            bar: 1.0,
+            times: (spec.bars as f64 / p.bars.max(0.25)).ceil() as u32,
+            at: Vec::new(),
+            bars: None,
+            from_bar: None,
+        })
+        .collect()
+}
+
+// a project path with fl studio's factory folder filled in, and a bare file name looked for in the output folder
+pub fn project_path(path: &str, out: &Path) -> PathBuf {
+    let local = local_path(path);
+    if local.is_relative() && !local.exists() {
+        out.join(local)
+    } else {
+        local
+    }
 }
 
 // the samples in fl studio's own packs whose path holds every word of a search, as paths fl studio understands

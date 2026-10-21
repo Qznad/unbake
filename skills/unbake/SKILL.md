@@ -18,9 +18,9 @@ Don't decide silently when there are choices: the genre, the melody, the referen
 These are rules, not suggestions. Stop and wait for the user's answer at each one, even when they asked for everything in one go ("make a loop, then the whole song"): that asks for the whole journey, not for skipping their choices.
 
 1. **After transcribing, before building anything:** tell them what was found, then ask the genre (with your suggestion), the tempo when the tempo finding has a half or double time unknown, the reference project and sounds you propose, and which section the loop comes from (with your suggestion from `song_overview`).
-2. **After writing the loop:** tell them which file to open and ask the three listening questions (step 5 of path A). Don't write another version or the whole song until they say the loop works.
-3. **Before the whole song:** show the section plan (which bars get which drums, bass, chords and melody letters, and what changes where) and wait for an OK.
-4. **After writing the whole song:** ask them to listen and say what's wrong, section by section.
+2. **After writing each loop,** the main one and every section loop: tell them which file to open and ask the three listening questions (step 5 of path A). Don't write another version, the next section or the whole song until they say it works.
+3. **Before the section loops:** show the section plan (the sections with their bars, which ones repeat, and what each plays: drums, bass, chords and melody letters) and wait for an OK.
+4. **After combining the whole song:** ask them to listen and say what's wrong, section by section.
 
 Build from this song's facts and FL's references. Projects you find on disk from earlier unbake runs are not this user's choices: don't reuse their sounds or structure unless the user points you to them.
 
@@ -58,6 +58,7 @@ This is the path users liked: real producers' sounds playing the song's own fact
    - a sub holding one long root per bar, plus an audible bass layer an octave or more up, since a pure sub can't be heard on laptop speakers
    - a fill in the last bar (a snare roll rising in velocity) and a crash on the first bar of each phrase
    - copied channels bring their mixer effects; set `effects: false` for a channel whose insert has filters that were automated in the reference (it comes out silent)
+   - play a copied sound in the register its producer wrote for it: read their pattern with `reference_pattern` and move your notes by octaves to match (a pluck written around C3 sounds wrong at C5)
    - levels with `volume`: drums 80 to 85, hats 40 to 50, sub about 80, bass layer 50 to 60, pad 60 to 70, lead about 70
    - markers saying where the loop comes from, like "Drop loop (from bars 33-36)"
    - `tracks` naming the playlist tracks after the instruments (Kick, Snare, Hats, Sub, Bass, Keys, Lead)
@@ -67,12 +68,11 @@ This is the path users liked: real producers' sounds playing the song's own fact
 
 6. **Improve it.** The description is saved next to the project as json. Change only what the user pointed at and write it under a new name (v2, v3) so they can compare. Explain each change in music terms ("the bass now holds the root and pulses 8ths an octave up, the way the song's bar 36 does").
 
-7. **Then the whole song,** once the user says the loop works. First show them the section plan and wait for an OK (stop point 3). Songs change as they go, so never repeat the loop's melody, bass and chords all the way through:
-   - `song_overview` finds the song's repeating cycle (often 8 bars of chords) and where the drums, hats, bass and lead come in and drop out.
-   - `song_parts` with `melody`, `bass`, `leftover` and `drums`, from the cycle's first bar with the cycle's length, letters every cycle (A A B A C...). Call it once to see the letters, then with `letter` for the notes of each letter you write. Write one pattern per letter ("Lead A", "Lead B", "Bass C") with `from_parts` in `compose_loop`, which takes the letter's notes straight from song_parts with a channel, a transpose and a note range (no need to copy notes by hand), and place each letter with a clip's `at` list, the bars song_parts gives for that letter. A letter heard several times is voted and clean. A melody letter heard once that is a `variation_of` another gets its gaps filled from it. A melody letter heard once with no relative is raw and often another instrument while the lead drops out: put it on its own track listed in `mute`, named like "Lead (unsure, check against the Other stem)", and tell the user. The bass comes back already moved onto each bar's root and fifth, the clean bassline a producer would write.
-   - `harmony` over the whole song gives each span's real chord, so the keys and the sub follow the song's changes (a Gmadd9 or a C turnaround) instead of one cycle repeated.
-   - Drums: use the grooves `song_parts` finds for `drums` (a sparse one, a full one), plus fills and crashes where the sections change.
-   - Keep the loop's sounds, place everything so project bar 1 is song bar 1, name the sections with markers saying what changes (including which melody letter plays), add `stems` from bar 1, and write it as a new project next to the loop.
+7. **Then the whole song, one section at a time,** once the user says the loop works. The loop came out well because the user listened to it and steered, so give every section the same care instead of writing the whole song in one go:
+   - **Section plan (stop point 3).** `song_overview` shows where the drums, hats, bass and lead come in and drop out, and the chord of each bar, from which you read the song's repeating cycle (often 4 or 8 bars). Give `song_parts` that length, because parts cut at the wrong length letter every stretch differently. Call `song_parts` with `melody`, `bass`, `leftover` and `drums` from the cycle's first bar with the cycle's length: it letters every cycle (A A B A C...). Group the bars into sections (intro, verse, build, drop, break, outro) and mark the ones that repeat: a second drop playing the same letters is the drop loop again. For each distinct section say what plays. Show the plan and wait for an OK.
+   - **One loop per distinct section,** each its own `compose_loop` project in the same folder, named like "<song> intro". First call `flp_info` and `playlist` on the user's saved main loop to see what they changed in FL (muted, moved or deleted clips, new effects), then build on it: copy its channels with `copy` {project: that .flp, channel}, so their sound edits carry over. Write the section's own parts: `from_parts` for its melody and bass letters (a letter heard several times is voted and clean; a melody letter heard once that is a `variation_of` another has its gaps filled from it; one heard once with no relative is often another instrument, so put it on a track listed in `mute`, named like "Lead (unsure, check against the Other stem)", and tell the user; bass comes back on each bar's root and fifth), `grids` from `part_grid` for its drums, and chords voiced from `harmony` over its bars. Make it one cycle of the section (4 or 8 bars), put the fill in its own pattern in the last bar when a different section follows, and give it `stems` cut to its bars.
+   - **Listen to each section (stop point 2).** Same three questions, fix what they point at as v2, and only then start the next section. If they changed a section in FL, read it with `playlist` and `flp_info` before going on.
+   - **Combine** once every section works: `compose_loop` with `sections`, one entry per section with its project, the bars it starts at (`at`, several for a section that comes back), its length (`bars`; the loop repeats to fill it and is cut there), `first_only` for a crash that only opens the section and `last_only` for the fill that only closes it. List the main loop first, so its tracks come first and its master effects are used. Each section brings its sounds, effects, patterns and clips as the user last saved them, and gets a marker with its name. Add `stems` from bar 1, so project bar 1 is song bar 1, then stop point 4. To fix one section, change its loop and combine again.
 
 8. **Explain the song** as a short lesson: tempo and key and its notes, the chord progression in plain names, what the bass, drums and melody do, which parts came from the song and which from the reference, and what to try changing.
 
@@ -90,6 +90,7 @@ A faithful draft with every note heard, the stems as muted audio clips and sound
 
 - `inspect_part` answers questions about specific bars ("what does the bass play in bar 9?"). Don't list whole songs of notes.
 - `find_samples` finds FL's own kicks, snares, hats, crashes and loops by words.
+- `playlist` lists any project's tracks and clips in compose_loop's playlist form: what the user changed in a loop, or how a producer arranged a reference song.
 - `rebuild` does transcribe and write in one go. `analyze` gives tempo and key in seconds. `split` only separates stems.
 
 ## Limits to keep in mind
@@ -101,4 +102,4 @@ A faithful draft with every note heard, the stems as muted audio clips and sound
 
 ## Without MCP
 
-The same tools exist on the command line: `unbake doctor`, `unbake transcribe song.mp3 -o folder`, `unbake inspect folder bass --from-bar 33`, `unbake references --min-bpm 160`, `unbake flp-info project.flp`, `unbake pattern project.flp "Main Break"`, `unbake samples snare power`, `unbake compose loop.json -o folder`, and for path B `unbake candidates`, `unbake piano-roll`, `unbake choose` and `unbake write`.
+The same tools exist on the command line: `unbake doctor`, `unbake transcribe song.mp3 -o folder`, `unbake inspect folder bass --from-bar 33`, `unbake references --min-bpm 160`, `unbake flp-info project.flp`, `unbake pattern project.flp "Main Break"`, `unbake playlist project.flp`, `unbake samples snare power`, `unbake compose loop.json -o folder`, and for path B `unbake candidates`, `unbake piano-roll`, `unbake choose` and `unbake write`.

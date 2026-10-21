@@ -8,6 +8,7 @@ mod analysis;
 mod arrange;
 mod audio;
 mod basic_pitch;
+mod combine;
 mod compare;
 mod compose;
 mod doctor;
@@ -207,6 +208,11 @@ enum Command {
         about = "list the notes of one pattern of an fl studio project, by channel, bar and step"
     )]
     Pattern { file: PathBuf, name: String },
+
+    #[command(
+        about = "list the playlist of an fl studio project track by track, each clip with its bar, length and repeats"
+    )]
+    Playlist { file: PathBuf },
 
     #[command(
         about = "list fl studio's own demo songs and genre templates to learn from, with their tempo, sounds and patterns"
@@ -737,6 +743,31 @@ fn run(command: Command) -> Result<(), String> {
                     "  bar {:>3} step {:>5.2}  {:<5} {:>5.2} steps  velocity {:>3}  {}",
                     note.bar, note.step, note.note, note.steps, note.velocity, note.channel
                 );
+            }
+            Ok(())
+        }
+        Command::Playlist { file } => {
+            let project = flp::events::read(&compose::local_path(&file.display().to_string()))?;
+            let playlist = combine::playlist(&project);
+            println!("{} bars", playlist.bars);
+            for track in playlist.tracks {
+                println!(
+                    "track {:>3}  {}{}",
+                    track.track,
+                    track.name.as_deref().unwrap_or(""),
+                    if track.muted { "  (muted)" } else { "" }
+                );
+                for clip in track.clips {
+                    let what = clip.pattern.or(clip.audio).unwrap_or_default();
+                    let from = clip
+                        .from_bar
+                        .map(|bar| format!(" from its bar {}", bar))
+                        .unwrap_or_default();
+                    println!(
+                        "    bar {:>6}  {:<28} {} bars x {}{}",
+                        clip.bar, what, clip.bars, clip.times, from
+                    );
+                }
             }
             Ok(())
         }

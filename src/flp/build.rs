@@ -71,6 +71,7 @@ pub struct NewClip {
     pub start: u32,
     pub length: u32,
     pub track: u16,
+    pub cut: Option<u32>,
 }
 
 pub struct NewAudioClip {
@@ -157,7 +158,7 @@ pub fn build(
             scale(clip.start + extras.shift),
             scale(clip.length),
             clip.track,
-            (-1i32).to_le_bytes(),
+            whole_pattern(),
             &extra,
         ));
     }
@@ -168,7 +169,7 @@ pub fn build(
             scale(extras.stem_start),
             length,
             (track_names.len() + n) as u16,
-            (-1f32).to_le_bytes(),
+            whole_audio(),
             &extra,
         ));
     }
@@ -283,12 +284,19 @@ pub fn compose(
     let mut items: Vec<Vec<u8>> = clips
         .iter()
         .map(|clip| {
+            let offsets = match clip.cut {
+                Some(from) => (
+                    (scale(from) as i32).to_le_bytes(),
+                    (scale(from + clip.length) as i32).to_le_bytes(),
+                ),
+                None => whole_pattern(),
+            };
             item_bytes(
                 PATTERN_BASE + clip.pattern as u16 + 1,
                 scale(clip.start),
                 scale(clip.length),
                 clip.track,
-                (-1i32).to_le_bytes(),
+                offsets,
                 &extra,
             )
         })
@@ -300,7 +308,7 @@ pub fn compose(
             scale(clip.start),
             length,
             clip.track,
-            (-1f32).to_le_bytes(),
+            whole_audio(),
             &extra,
         ));
     }
@@ -562,7 +570,7 @@ fn find_channel<'a>(channels: &[&'a Block], part: Part) -> Option<&'a Block> {
 
 // the 24 bytes fl studio stores for one note in a pattern
 fn note_bytes(channel: u16, start: u32, length: u32, key: u8, velocity: u8) -> Vec<u8> {
-    let velocity = (velocity as u32 * 128 / 127) as u8;
+    let velocity = ((velocity as u32 * 128 + 63) / 127) as u8;
     let mut out = Vec::with_capacity(info::NOTE_SIZE);
     out.extend_from_slice(&start.to_le_bytes());
     out.extend_from_slice(&0x4000u16.to_le_bytes());
@@ -574,13 +582,23 @@ fn note_bytes(channel: u16, start: u32, length: u32, key: u8, velocity: u8) -> V
     out
 }
 
-// the bytes fl studio stores for one playlist clip, a pattern or an audio channel, with "whole clip" offsets
+// the offsets fl studio writes for a pattern clip that plays its whole pattern
+fn whole_pattern() -> ([u8; 4], [u8; 4]) {
+    ((-1i32).to_le_bytes(), (-1i32).to_le_bytes())
+}
+
+// the offsets fl studio writes for an audio clip that plays its whole sample
+fn whole_audio() -> ([u8; 4], [u8; 4]) {
+    ((-1f32).to_le_bytes(), (-1f32).to_le_bytes())
+}
+
+// the bytes fl studio stores for one playlist clip, a pattern or an audio channel, with where it starts and ends inside its source
 fn item_bytes(
     index: u16,
     start: u32,
     length: u32,
     track: u16,
-    offset: [u8; 4],
+    offsets: ([u8; 4], [u8; 4]),
     extra: &[u8],
 ) -> Vec<u8> {
     let mut out = Vec::with_capacity(32 + extra.len());
@@ -593,8 +611,8 @@ fn item_bytes(
     out.extend_from_slice(&[120, 0]);
     out.extend_from_slice(&64u16.to_le_bytes());
     out.extend_from_slice(&[64, 100, 128, 128]);
-    out.extend_from_slice(&offset);
-    out.extend_from_slice(&offset);
+    out.extend_from_slice(&offsets.0);
+    out.extend_from_slice(&offsets.1);
     out.extend_from_slice(extra);
     out
 }

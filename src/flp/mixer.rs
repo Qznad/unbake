@@ -44,6 +44,14 @@ pub fn copy_effects(project: &mut Project, target: usize, from: &Project, source
     true
 }
 
+// the effect slot events of one insert, plugins and settings, empty when the insert is not found
+pub fn effects(project: &Project, insert: usize) -> Vec<Event> {
+    match inserts(project).get(insert) {
+        Some(found) => project.events[found.flags + 1..found.slots_end].to_vec(),
+        None => Vec::new(),
+    }
+}
+
 // the insert a channel of a project is routed to
 pub fn channel_insert(project: &Project, start: usize, end: usize) -> Option<usize> {
     project.events[start..end]

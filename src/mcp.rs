@@ -1,3 +1,4 @@
+use crate::combine;
 use crate::compose;
 use crate::doctor;
 use crate::flp;
@@ -10,7 +11,8 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 const AFTER_TRANSCRIBE: &str = "Stop here and ask the user before building anything, even if they asked for everything in one go. Tell them the tempo, key, bars and sections, then ask: the genre (suggest one from the tempo and drums), the tempo if the tempo finding has a half or double time unknown, and which section the loop should come from (suggest the busiest drop from song_overview). After they answer, propose a reference project and its sounds and ask again. Don't reuse choices from earlier unbake projects you find on disk unless the user points you to them.";
-const AFTER_COMPOSE: &str = "Stop here. Tell the user which .flp to open (in this folder), then ask: can every part be heard, how does it feel overall, and which part is weakest. Wait for their answer. Don't write another version or the whole song until they say this one works, and before the whole song show them the section plan and wait for an OK.";
+const AFTER_COMPOSE: &str = "Stop here. Tell the user which .flp to open (in this folder), then ask: can every part be heard, how does it feel overall, and which part is weakest. Wait for their answer. Don't write another version, the next section or the whole song until they say this one works. They may change it in FL and save it: build on their saved .flp (read it with flp_info and playlist), not only on your description.";
+const AFTER_SONG: &str = "Stop here. Tell the user which .flp to open (in this folder), then ask them to listen section by section and say what's wrong where. Fix a section in its own loop project and write it again, then combine the sections again.";
 const SKILL: &str = include_str!("../skills/unbake/SKILL.md");
 
 // answers model context protocol requests, one json message per line on stdin, until stdin closes
@@ -256,7 +258,7 @@ fn tools() -> Value {
         },
         {
             "name": "flp_info",
-            "description": "List what is inside an FL Studio project: version, title, tempo, every channel with its plugin or sample, mixer insert, volume and whether it is automation, the patterns with their note counts, and each mixer insert's effect chain. Paths may start with %FLStudioFactoryData%.",
+            "description": "List what is inside an FL Studio project: version, title, tempo, every channel with its plugin or sample, mixer insert, volume and whether it is automation, the patterns with their note counts, and the effect chain of each mixer insert that has effects. Paths may start with %FLStudioFactoryData%.",
             "inputSchema": {
                 "type": "object",
                 "properties": { "file": { "type": "string", "description": "path to an .flp file" } },
@@ -289,6 +291,15 @@ fn tools() -> Value {
             }
         },
         {
+            "name": "playlist",
+            "description": "List the playlist of any FL Studio project track by track: each track's number, name and whether it is muted, and its clips as {pattern or audio, bar, bars, times, from_bar?} in the same form compose_loop's playlist takes, back-to-back repeats counted as times. Use it to see what the user moved, added or removed after opening a loop in FL, or how a producer arranged a reference song.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "file": { "type": "string", "description": "path to an .flp file" } },
+                "required": ["file"]
+            }
+        },
+        {
             "name": "find_samples",
             "description": "Find samples in FL Studio's own packs by words in their path, like 'kick', 'snare power' or 'loops break'. Returns paths starting with %FLStudioFactoryData% to use as a channel sample in compose_loop.",
             "inputSchema": {
@@ -302,7 +313,7 @@ fn tools() -> Value {
         },
         {
             "name": "compose_loop",
-            "description": "Write an FL Studio project from a loop description and save the description next to it as json, to change and write again. The description: name, tempo, bars (default 8), channels, patterns, playlist, markers and master. A channel is {name, sample, root?, volume?} with an FL pack or local sample, or {name, copy: {project, channel}, effects?, volume?}, which copies a channel from another project with its plugin, preset and mixer effects (effects false leaves them out; channels saved at volume 0 are reset to 78%). A pattern is {name, bars, notes?, grids?, copy?}: notes are {channel, bar, step, steps, key, velocity} with bar and step from 1, 16 steps a bar, key a name like Eb4 (C4 is 60) or a number; grids are {channel, bar, hits} with 16 characters a bar, X loud, x normal, o soft, g ghost, anything else a rest; copy is {project, pattern, channels: {their channel: our channel}, transpose?, from_bar?, bars?}. from_parts is {folder, part, letter, from_bar, bars, to_bar?, channel, transpose?, low?, high?}: the notes one song_parts letter agrees on (call song_parts with the same part, from_bar, bars and to_bar), shifted by transpose and folded by octaves into low to high, on channel; for drums give channels {kick, snare, hat} instead. Give the pattern the letter's bars. The playlist is a list of {pattern, track, bar, times} or {pattern, track, at: [bars], times}, at placing the pattern once at each listed bar, like the bars song_parts gives for a letter; without a playlist every pattern repeats on its own track over the bars. Markers are {bar, name}. master is a project whose master effects are copied. tracks is a list of playlist track names, from track 1. mute is a list of track numbers to leave muted, for parts the user should check before using. stems is {folder, from_bar, bars?, at_bar?}: the song's four stems from a transcribed folder, cut to the song bars from from_bar (all the rest when bars is left out) and placed muted from at_bar (default 1) on tracks after the parts, so the user can unmute one and compare; the project tempo must be the song's.",
+            "description": "Write an FL Studio project from a loop description and save the description next to it as json, to change and write again. The description: name, tempo, bars (default 8), channels, patterns, playlist, markers and master. A channel is {name, sample, root?, volume?} with an FL pack or local sample, or {name, copy: {project, channel}, effects?, volume?}, which copies a channel from another project with its plugin, preset and mixer effects (effects false leaves them out; channels saved at volume 0 are reset to 78%). A pattern is {name, bars, notes?, grids?, copy?}: notes are {channel, bar, step, steps, key, velocity} with bar and step from 1, 16 steps a bar, key a name like Eb4 (C4 is 60) or a number; grids are {channel, bar, hits} with 16 characters a bar, X loud, x normal, o soft, g ghost, anything else a rest; copy is {project, pattern, channels: {their channel: our channel}, transpose?, from_bar?, bars?}. from_parts is {folder, part, letter, from_bar, bars, to_bar?, channel, transpose?, low?, high?}: the notes one song_parts letter agrees on (call song_parts with the same part, from_bar, bars and to_bar), shifted by transpose and folded by octaves into low to high, on channel; for drums give channels {kick, snare, hat} instead. Give the pattern the letter's bars. The playlist is a list of {pattern, track, bar, times, bars?, from_bar?} or {pattern, track, at: [bars], times}, at placing the pattern once at each listed bar, like the bars song_parts gives for a letter; bars plays only that many bars of the pattern and from_bar starts inside it; without a playlist every pattern repeats on its own track over the bars. sections is a list of {name, project, at: [bars], bars?, first_only?, last_only?} that builds a whole song from finished section loops: each section's .flp (a file name is looked for in out; the user's saved changes count) brings the channels, mixer effects, patterns and clips its playlist plays, placed at each bar in at, repeated to fill bars (default the loop's own length) and cut there, with a marker named after the section. first_only patterns play only in the first repeat (a crash), last_only patterns only at the section's end (a fill), with the clip before them on their track playing in their place in earlier repeats. Channels and patterns that are the same in several sections are shared; ones that differ keep the section's name in brackets. A channel in channels replaces every section channel of that name. Tracks are matched by name and come in the order the sections first use them, so list the main loop first or give tracks; the master effects come from the first section that has some unless master is given. Markers are {bar, name}. master is a project whose master effects are copied. tracks is a list of playlist track names, from track 1. mute is a list of track numbers to leave muted, for parts the user should check before using. stems is {folder, from_bar, bars?, at_bar?}: the song's four stems from a transcribed folder, cut to the song bars from from_bar (all the rest when bars is left out) and placed muted from at_bar (default 1) on tracks after the parts, so the user can unmute one and compare; the project tempo must be the song's.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -351,7 +362,14 @@ fn call_tool(params: &Value) -> Value {
         "write_flp" => write_tool(args).and_then(text),
         "flp_info" => factory_arg(args, "file")
             .and_then(|file| flp::events::read(&file))
-            .and_then(|project| text(flp::info::summarize(&project))),
+            .and_then(|project| {
+                let mut summary = flp::info::summarize(&project);
+                summary.inserts.retain(|insert| !insert.effects.is_empty());
+                text(summary)
+            }),
+        "playlist" => factory_arg(args, "file")
+            .and_then(|file| flp::events::read(&file))
+            .and_then(|project| text(combine::playlist(&project))),
         "references" => compose::references(
             args["words"].as_str().unwrap_or(""),
             args["min_bpm"].as_f64().unwrap_or(0.0),
@@ -433,7 +451,10 @@ fn compose_tool(args: &Value) -> Result<Value, String> {
     let template = optional_path(args, "template");
     let written = compose::write_json(&args["loop"], &out, template.as_deref())?;
     let mut answer = serde_json::to_value(written).map_err(|e| e.to_string())?;
-    answer["next_step"] = json!(AFTER_COMPOSE);
+    let song = args["loop"]["sections"]
+        .as_array()
+        .is_some_and(|sections| !sections.is_empty());
+    answer["next_step"] = json!(if song { AFTER_SONG } else { AFTER_COMPOSE });
     Ok(answer)
 }
 
@@ -670,11 +691,11 @@ mod tests {
         );
     }
 
-    // the tool list has nineteen tools and an unknown tool comes back as an error result
+    // the tool list has twenty tools and an unknown tool comes back as an error result
     #[test]
     fn lists_tools() {
         let reply = handle(&json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).unwrap();
-        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 19);
+        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 20);
         let call = handle(&json!({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": { "name": "nope", "arguments": {} }
