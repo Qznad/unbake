@@ -8,6 +8,7 @@ const NAMES: [&str; 12] = [
     "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B",
 ];
 const PRESENT: f64 = 0.08;
+const THIRD: f64 = 0.04;
 
 #[derive(Serialize)]
 pub struct BarLine {
@@ -188,7 +189,7 @@ fn span(session: &Session, bar: u32, bars: u32) -> HarmonySpan {
     let chord = match root {
         Some(root) if total > 0.0 => {
             let shares: Vec<f64> = other.iter().map(|w| w / total).collect();
-            Some(chord_name(root, &shares))
+            name_over_bass(root, &shares)
         }
         _ => None,
     };
@@ -214,12 +215,37 @@ fn weights(notes: &[Note], start: u32, end: u32) -> [f64; 12] {
     out
 }
 
+// the chord over a bass note, named from the bass when the notes above fit it, otherwise from the notes as a slash chord, or none
+pub fn name_over_bass(bass: usize, shares: &[f64]) -> Option<String> {
+    let at = |interval: usize| shares[(bass + interval) % 12];
+    let third = at(3).max(at(4)) >= PRESENT;
+    let colour = [2, 10, 11].iter().any(|&i| at(i) >= PRESENT);
+    if at(7) >= PRESENT || (third && colour) {
+        return Some(chord_name(bass, shares));
+    }
+    let root = (0..12)
+        .filter(|&pc| shares[pc] >= PRESENT)
+        .max_by(|&a, &b| {
+            fits(a, shares)
+                .cmp(&fits(b, shares))
+                .then(shares[a].total_cmp(&shares[b]))
+        })?;
+    (fits(root, shares) >= 2).then(|| format!("{}/{}", chord_name(root, shares), NAMES[bass]))
+}
+
+// how many of a root's own note, third and fifth are heard, the bass counting as its own note
+fn fits(root: usize, shares: &[f64]) -> usize {
+    let at = |interval: usize| shares[(root + interval) % 12];
+    1 + usize::from(at(3).max(at(4)) >= PRESENT) + usize::from(at(7) >= PRESENT)
+}
+
 // a chord name like Am9, Gm11 or Bbmaj9 from the bass note and the share of each note name heard above it
 pub fn chord_name(root: usize, shares: &[f64]) -> String {
     let has = |interval: usize| shares[(root + interval) % 12] >= PRESENT;
     let weight = |interval: usize| shares[(root + interval) % 12];
-    let minor = has(3) && (!has(4) || weight(3) >= weight(4));
-    let major = has(4) && !minor;
+    let third = |interval: usize| weight(interval) >= THIRD;
+    let minor = third(3) && (!third(4) || weight(3) >= weight(4));
+    let major = third(4) && !minor;
     let flat_seven = has(10) && (!has(11) || weight(10) >= weight(11));
     let major_seven = has(11) && !flat_seven;
     let extension = if has(9) && (flat_seven || major_seven) {
@@ -296,5 +322,11 @@ mod tests {
         assert_eq!(chord_name(9, &a), "Am9");
         let c = shares(&[(0, 40.0), (4, 30.0), (7, 30.0)]);
         assert_eq!(chord_name(0, &c), "C");
+        let a_seven = shares(&[(4, 47.0), (7, 37.0), (0, 5.0), (2, 4.0), (9, 3.0)]);
+        assert_eq!(name_over_bass(9, &a_seven).as_deref(), Some("Am7"));
+        let over_b_flat = shares(&[(4, 45.0), (7, 34.0), (0, 8.0), (11, 7.0), (2, 6.0)]);
+        assert_eq!(name_over_bass(10, &over_b_flat).as_deref(), Some("C/Bb"));
+        let thin = shares(&[(4, 55.0), (2, 45.0)]);
+        assert_eq!(name_over_bass(10, &thin), None);
     }
 }
