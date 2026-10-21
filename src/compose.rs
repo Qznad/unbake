@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 const FACTORY: &str = "%FLStudioFactoryData%";
+const SUMMARY_CHANNELS: usize = 8;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -162,8 +163,19 @@ pub struct Reference {
     pub path: String,
     pub title: Option<String>,
     pub tempo: Option<f64>,
+    pub channel_count: usize,
+    pub pattern_count: usize,
     pub channels: Vec<String>,
     pub patterns: Vec<String>,
+}
+
+impl Reference {
+    // the reference with only its first few sounds and no pattern list, for a short overview
+    pub fn summary(mut self) -> Reference {
+        self.channels.truncate(SUMMARY_CHANNELS);
+        self.patterns.clear();
+        self
+    }
 }
 
 #[derive(Serialize)]
@@ -644,9 +656,17 @@ pub fn references(query: &str, min_bpm: f64, max_bpm: f64) -> Result<Vec<Referen
                 continue;
             }
             let relative = file.strip_prefix(&root).unwrap_or(&file);
+            let patterns: Vec<String> = summary
+                .patterns
+                .iter()
+                .filter(|p| p.notes > 0)
+                .map(|p| p.name.clone())
+                .collect();
             found.push(Reference {
                 name,
                 kind: kind.to_string(),
+                channel_count: channels.len(),
+                pattern_count: patterns.len(),
                 path: format!(
                     "{}/{}",
                     FACTORY,
@@ -655,12 +675,7 @@ pub fn references(query: &str, min_bpm: f64, max_bpm: f64) -> Result<Vec<Referen
                 title: summary.title,
                 tempo: summary.tempo,
                 channels,
-                patterns: summary
-                    .patterns
-                    .iter()
-                    .filter(|p| p.notes > 0)
-                    .map(|p| p.name.clone())
-                    .collect(),
+                patterns,
             });
         }
     }

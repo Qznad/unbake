@@ -161,6 +161,8 @@ enum Command {
         bars: u32,
         #[arg(long, help = "last bar, the end of the song by default")]
         to_bar: Option<u32>,
+        #[arg(long, help = "show the notes of this letter only")]
+        letter: Option<String>,
     },
 
     #[command(about = "draw a piano roll png of up to four parts or candidates over each other")]
@@ -215,6 +217,11 @@ enum Command {
         min_bpm: f64,
         #[arg(long, default_value_t = 999.0, help = "highest tempo")]
         max_bpm: f64,
+        #[arg(
+            long,
+            help = "list every channel and pattern instead of the first few sounds"
+        )]
+        detail: bool,
     },
 
     #[command(
@@ -542,8 +549,12 @@ fn run(command: Command) -> Result<(), String> {
             from_bar,
             bars,
             to_bar,
+            letter,
         } => {
-            let parts = views::parts(&folder, &name, from_bar, bars, to_bar)?;
+            let mut parts = views::parts(&folder, &name, from_bar, bars, to_bar)?;
+            if letter.is_some() {
+                parts = parts.only_letter(letter.as_deref());
+            }
             println!("  bars       part  notes  same  closest other");
             for part in &parts.parts {
                 let closest = part
@@ -733,8 +744,14 @@ fn run(command: Command) -> Result<(), String> {
             words,
             min_bpm,
             max_bpm,
+            detail,
         } => {
             for reference in compose::references(&words.join(" "), min_bpm, max_bpm)? {
+                let reference = if detail {
+                    reference
+                } else {
+                    reference.summary()
+                };
                 println!(
                     "{:>6}  {:<10} {}",
                     reference
@@ -745,7 +762,19 @@ fn run(command: Command) -> Result<(), String> {
                     reference.name
                 );
                 println!("        {}", reference.path);
-                println!("        channels: {}", reference.channels.join(", "));
+                let more = reference.channel_count - reference.channels.len();
+                let more = if more > 0 {
+                    format!(" and {} more", more)
+                } else {
+                    String::new()
+                };
+                println!(
+                    "        {} channels, {} patterns: {}{}",
+                    reference.channel_count,
+                    reference.pattern_count,
+                    reference.channels.join(", "),
+                    more
+                );
                 if !reference.patterns.is_empty() {
                     println!("        patterns: {}", reference.patterns.join(", "));
                 }

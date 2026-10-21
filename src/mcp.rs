@@ -224,7 +224,7 @@ fn tools() -> Value {
         },
         {
             "name": "song_parts",
-            "description": "Cut a part of a transcribed folder (melody, bass, chords, leftover, drums or a melody candidate) into stretches of some bars from a first bar, usually the song's chord cycle from song_overview, and give each stretch a letter: stretches sharing at least half their notes (same step and note name, so octave slips still match) get the same letter when they share at least 30% of their notes (same step and note name, so octave slips still match), since a noisy repeat of a melody still shares that much. For each stretch: its letter, note count, how close it is to the first stretch of its letter, and the closest other letter. For each letter: the bars it plays and its notes (bar and step from 1 inside the stretch), ready to write as that letter's pattern. A letter heard several times gives the notes a third of its repeats agree on (at least two), one note per step for a melody or bassline, which is the cleanest. A letter heard once that shares 15% or more with a repeated letter is a variation of it (variation_of): its own notes with its empty steps filled from that letter. A letter heard once with no close relative is raw; in a quieter section it may be another instrument while the lead drops out, so ask the user to check it against the Other stem. Use it so every different melody, bassline or chord part of the song gets its own pattern instead of one repeated loop. The melody is tidied first, as write_flp does. The bass is cleaned first: every note that isn't its bar's root or fifth moves to the root, then it is tidied, so the letters hold the bassline a producer would write. Only melodies get gaps filled from the letter they vary, since a quiet bar in the isolated bass stem is real silence.",
+            "description": "Cut a part of a transcribed folder (melody, bass, chords, leftover, drums or a melody candidate) into stretches of some bars from a first bar, usually the song's chord cycle from song_overview, and give each stretch a letter: stretches sharing at least half their notes (same step and note name, so octave slips still match) get the same letter when they share at least 30% of their notes (same step and note name, so octave slips still match), since a noisy repeat of a melody still shares that much. For each stretch: its letter, note count, how close it is to the first stretch of its letter, and the closest other letter. For each letter: the bars it plays, its note count and, when asked for with letter, its notes (bar and step from 1 inside the stretch), ready to write as that letter's pattern. Call it once without letter to see the letters, then once per letter you want to write. A letter heard several times gives the notes a third of its repeats agree on (at least two), one note per step for a melody or bassline, which is the cleanest. A letter heard once that shares 15% or more with a repeated letter is a variation of it (variation_of): its own notes with its empty steps filled from that letter. A letter heard once with no close relative is raw; in a quieter section it may be another instrument while the lead drops out, so ask the user to check it against the Other stem. Use it so every different melody, bassline or chord part of the song gets its own pattern instead of one repeated loop. The melody is tidied first, as write_flp does. The bass is cleaned first: every note that isn't its bar's root or fifth moves to the root, then it is tidied, so the letters hold the bassline a producer would write. Only melodies get gaps filled from the letter they vary, since a quiet bar in the isolated bass stem is real silence.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -232,7 +232,8 @@ fn tools() -> Value {
                     "name": name,
                     "from_bar": from_bar,
                     "bars": { "type": "integer", "description": "bars per stretch, default 8" },
-                    "to_bar": { "type": "integer", "description": "last bar, the end of the song by default" }
+                    "to_bar": { "type": "integer", "description": "last bar, the end of the song by default" },
+                    "letter": { "type": "string", "description": "give the notes of this letter only; without it the answer holds the letters, their bars and note counts but no notes" }
                 },
                 "required": ["folder", "name"]
             }
@@ -262,13 +263,14 @@ fn tools() -> Value {
         },
         {
             "name": "references",
-            "description": "List FL Studio's own demo songs (by real producers, mostly stock plugins) and genre templates to learn from and copy sounds out of, with their tempo, channels (with plugin or sample, automated ones marked) and patterns. Filter by words and tempo. Paths start with %FLStudioFactoryData% and work in the other tools.",
+            "description": "List FL Studio's own demo songs (by real producers, mostly stock plugins) and genre templates to learn from and copy sounds out of. Gives a short summary of each by default: name, kind, tempo, how many channels and patterns, and its first few sounds (channel with plugin or sample, automated ones marked). Call flp_info on one project, or pass detail true, for every channel and pattern. Filter by words and tempo. Paths start with %FLStudioFactoryData% and work in the other tools.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "words": { "type": "string", "description": "words that must appear in the name, title or channels, like break or sytrus" },
                     "min_bpm": { "type": "number", "description": "lowest tempo" },
-                    "max_bpm": { "type": "number", "description": "highest tempo" }
+                    "max_bpm": { "type": "number", "description": "highest tempo" },
+                    "detail": { "type": "boolean", "description": "every channel and pattern of every project instead of the summary, default false; this can be very long" }
                 }
             }
         },
@@ -353,6 +355,13 @@ fn call_tool(params: &Value) -> Value {
             args["min_bpm"].as_f64().unwrap_or(0.0),
             args["max_bpm"].as_f64().unwrap_or(999.0),
         )
+        .map(|found| {
+            if args["detail"].as_bool().unwrap_or(false) {
+                found
+            } else {
+                found.into_iter().map(compose::Reference::summary).collect()
+            }
+        })
         .and_then(text),
         "reference_pattern" => reference_pattern(args).and_then(text),
         "find_samples" => compose::find_samples(
@@ -399,6 +408,7 @@ fn parts_tool(args: &Value) -> Result<views::Parts, String> {
         number(args, "bars", 8),
         args["to_bar"].as_u64().map(|n| n as u32),
     )
+    .map(|parts| parts.only_letter(args["letter"].as_str()))
 }
 
 // a part of a transcribed folder as 16 steps per bar
@@ -422,9 +432,9 @@ fn compose_tool(args: &Value) -> Result<compose::Written, String> {
     compose::write_json(&args["loop"], &out, template.as_deref())
 }
 
-// an answer as one block of indented json text
+// an answer as one block of compact json text, which agents read as well as indented json at a fraction of the size
 fn text(value: impl serde::Serialize) -> Result<Vec<Value>, String> {
-    let text = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+    let text = serde_json::to_string(&value).map_err(|e| e.to_string())?;
     Ok(vec![json!({ "type": "text", "text": text })])
 }
 

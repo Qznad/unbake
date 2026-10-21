@@ -53,6 +53,7 @@ pub struct PartGroup {
     pub label: String,
     pub bars: Vec<u32>,
     pub variation_of: Option<String>,
+    pub note_count: usize,
     pub notes: Vec<tools::NoteView>,
 }
 
@@ -292,6 +293,7 @@ pub fn parts(
                 label: letter(g),
                 bars: members.iter().map(|&m| stretches[m].0).collect(),
                 variation_of: backbone.map(letter),
+                note_count: notes.len(),
                 notes: notes
                     .iter()
                     .map(|n| tools::NoteView {
@@ -313,6 +315,21 @@ pub fn parts(
         parts,
         groups,
     })
+}
+
+impl Parts {
+    // the letters with their bars and note counts, and the notes of one letter only when it is asked for
+    pub fn only_letter(mut self, letter: Option<&str>) -> Parts {
+        for group in &mut self.groups {
+            if letter.is_none_or(|l| !l.eq_ignore_ascii_case(&group.label)) {
+                group.notes.clear();
+            }
+        }
+        if let Some(letter) = letter {
+            self.groups.retain(|g| g.label.eq_ignore_ascii_case(letter));
+        }
+        self
+    }
 }
 
 // what a note is when comparing stretches, its step, note name and drum, so an octave slip still matches
