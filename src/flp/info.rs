@@ -108,6 +108,7 @@ pub fn summarize(project: &Project) -> Summary {
                 next_insert_name = Some(events::decode_text(data)).filter(|n| !n.is_empty());
             }
             (events::INSERT_FLAGS, _) => {
+                in_channel = false;
                 inserts.push(Insert {
                     index: inserts.len(),
                     name: next_insert_name.take(),
