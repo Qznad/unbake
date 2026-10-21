@@ -223,6 +223,21 @@ fn tools() -> Value {
             }
         },
         {
+            "name": "song_parts",
+            "description": "Cut a part of a transcribed folder (melody, bass, chords, leftover, drums or a melody candidate) into stretches of some bars from a first bar, usually the song's chord cycle from song_overview, and give each stretch a letter: stretches sharing at least half their notes (same step and note name, so octave slips still match) get the same letter. For each stretch: its letter, note count, how close it is to the first stretch of its letter, and the closest other letter. For each letter: the bars it plays and the notes its repeats agree on (bar and step from 1 inside the stretch), ready to write as that letter's pattern. Use it so every different melody, bassline or chord part of the song gets its own pattern instead of one repeated loop. The melody is tidied first, as write_flp does.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": folder,
+                    "name": name,
+                    "from_bar": from_bar,
+                    "bars": { "type": "integer", "description": "bars per stretch, default 8" },
+                    "to_bar": { "type": "integer", "description": "last bar, the end of the song by default" }
+                },
+                "required": ["folder", "name"]
+            }
+        },
+        {
             "name": "harmony",
             "description": "For each bar or span of bars of a transcribed folder, the note names sounding in the other stem as percentages (weighted by length and loudness), the bass note, and a chord name with its extensions (Am9, Gm11, Bbmaj9) built from them. Richer than the chords finding, which only names triads. The chord is named from the bass note, so when the bass walks under a held chord the name follows the bass (Cm9 over an Eb bass reads Ebmaj13, the same notes); check the tones. Use it to voice the chords of a loop.",
             "inputSchema": {
@@ -318,6 +333,7 @@ fn call_tool(params: &Value) -> Value {
             .and_then(|folder| views::overview(&folder))
             .and_then(text),
         "part_grid" => grid_tool(args).and_then(text),
+        "song_parts" => parts_tool(args).and_then(text),
         "harmony" => path_arg(args, "folder")
             .and_then(|folder| {
                 views::harmony(
@@ -368,6 +384,21 @@ fn reference_pattern(args: &Value) -> Result<Vec<compose::PatternNote>, String> 
         .as_str()
         .ok_or("missing argument pattern".to_string())?;
     compose::pattern_view(&project, name)
+}
+
+// a part cut into lettered stretches with the notes each letter agrees on
+fn parts_tool(args: &Value) -> Result<views::Parts, String> {
+    let folder = path_arg(args, "folder")?;
+    let name = args["name"]
+        .as_str()
+        .ok_or("missing argument name".to_string())?;
+    views::parts(
+        &folder,
+        name,
+        number(args, "from_bar", 1),
+        number(args, "bars", 8),
+        args["to_bar"].as_u64().map(|n| n as u32),
+    )
 }
 
 // a part of a transcribed folder as 16 steps per bar
@@ -600,7 +631,7 @@ mod tests {
     #[test]
     fn lists_tools() {
         let reply = handle(&json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).unwrap();
-        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 18);
+        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 19);
         let call = handle(&json!({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": { "name": "nope", "arguments": {} }

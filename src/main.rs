@@ -141,6 +141,28 @@ enum Command {
         per: u32,
     },
 
+    #[command(
+        about = "cut a part into stretches of some bars, letter the ones that play the same, and show the notes each letter's repeats agree on"
+    )]
+    Parts {
+        folder: PathBuf,
+        name: String,
+        #[arg(
+            long,
+            default_value_t = 1,
+            help = "first bar of the first stretch, counting from 1"
+        )]
+        from_bar: u32,
+        #[arg(
+            long,
+            default_value_t = 8,
+            help = "bars per stretch, usually the song's chord cycle"
+        )]
+        bars: u32,
+        #[arg(long, help = "last bar, the end of the song by default")]
+        to_bar: Option<u32>,
+    },
+
     #[command(about = "draw a piano roll png of up to four parts or candidates over each other")]
     PianoRoll {
         folder: PathBuf,
@@ -510,6 +532,52 @@ fn run(command: Command) -> Result<(), String> {
                         _ => String::new(),
                     };
                     println!("  bar {:>3}  {:<6} {}", bar.bar, row.part, cells);
+                }
+            }
+            Ok(())
+        }
+        Command::Parts {
+            folder,
+            name,
+            from_bar,
+            bars,
+            to_bar,
+        } => {
+            let parts = views::parts(&folder, &name, from_bar, bars, to_bar)?;
+            println!("  bars       part  notes  same  closest other");
+            for part in &parts.parts {
+                let closest = part
+                    .closest_other
+                    .as_ref()
+                    .map(|(label, l)| format!("{} {:.2}", label, l))
+                    .unwrap_or_default();
+                println!(
+                    "  {:>3}-{:<3}    {:<4} {:>5}  {:.2}  {}",
+                    part.from_bar,
+                    part.from_bar + part.bars - 1,
+                    part.label,
+                    part.notes,
+                    part.same_as_first,
+                    closest
+                );
+            }
+            for group in &parts.groups {
+                let bars: Vec<String> = group.bars.iter().map(|b| b.to_string()).collect();
+                println!(
+                    "{} (bars {}): {} notes the repeats agree on",
+                    group.label,
+                    bars.join(", "),
+                    group.notes.len()
+                );
+                for bar in 1..=parts.bars_per_part {
+                    let mut cells = vec![".".to_string(); 16];
+                    for note in group.notes.iter().filter(|n| n.bar == bar) {
+                        cells[(note.step as usize - 1).min(15)] = note.note.clone();
+                    }
+                    if cells.iter().any(|c| c != ".") {
+                        let row: Vec<String> = cells.iter().map(|c| format!("{:<4}", c)).collect();
+                        println!("    bar {} {}", bar, row.join(""));
+                    }
                 }
             }
             Ok(())

@@ -2,6 +2,7 @@ use crate::music::{BAR, Note, Part, STEP};
 use crate::rebuild::{self, Session};
 use crate::tools;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::Path;
 
 const NAMES: [&str; 12] = [
@@ -9,6 +10,7 @@ const NAMES: [&str; 12] = [
 ];
 const PRESENT: f64 = 0.08;
 const THIRD: f64 = 0.04;
+const SAME_PART: f64 = 0.5;
 
 #[derive(Serialize)]
 pub struct BarLine {
@@ -33,6 +35,31 @@ pub struct GridRow {
 pub struct GridBar {
     pub bar: u32,
     pub rows: Vec<GridRow>,
+}
+
+#[derive(Serialize)]
+pub struct PartLine {
+    pub from_bar: u32,
+    pub bars: u32,
+    pub label: String,
+    pub notes: usize,
+    pub same_as_first: f64,
+    pub closest_other: Option<(String, f64)>,
+}
+
+#[derive(Serialize)]
+pub struct PartGroup {
+    pub label: String,
+    pub bars: Vec<u32>,
+    pub notes: Vec<tools::NoteView>,
+}
+
+#[derive(Serialize)]
+pub struct Parts {
+    pub name: String,
+    pub bars_per_part: u32,
+    pub parts: Vec<PartLine>,
+    pub groups: Vec<PartGroup>,
 }
 
 #[derive(Serialize)]
@@ -124,6 +151,191 @@ pub fn grid(folder: &Path, name: &str, from_bar: u32, bars: u32) -> Result<Vec<G
             GridBar { bar: bar + 1, rows }
         })
         .collect())
+}
+
+// cuts a part into stretches of some bars from a first bar, letters the stretches that play the same notes, and gives the notes each letter's repeats agree on
+pub fn parts(
+    folder: &Path,
+    name: &str,
+    from_bar: u32,
+    bars_per_part: u32,
+    to_bar: Option<u32>,
+) -> Result<Parts, String> {
+    let session = rebuild::load_session(folder)?;
+    let mut notes = tools::notes_named(&session, name)?;
+    if name != "drums" && name != "bass" && name != "chords" && name != "leftover" {
+        notes = crate::tidy::melody(&notes);
+    }
+    let length = bars_per_part.max(1) * BAR;
+    let first = from_bar.max(1) - 1;
+    let last = to_bar
+        .unwrap_or(session.bars)
+        .min(session.bars)
+        .max(first + 1);
+    let mut stretches: Vec<(u32, Vec<Note>)> = Vec::new();
+    let mut start = first * BAR;
+    while start < last * BAR {
+        let end = (start + length).min(last * BAR);
+        let inside: Vec<Note> = notes
+            .iter()
+            .filter(|n| n.start >= start && n.start < end)
+            .map(|n| Note {
+                start: n.start - start,
+                length: n.length.min(end - n.start),
+                ..*n
+            })
+            .collect();
+        stretches.push((start / BAR + 1, inside));
+        start = end;
+    }
+
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut labels: Vec<Option<usize>> = vec![None; stretches.len()];
+    for (i, (_, notes)) in stretches.iter().enumerate() {
+        if notes.is_empty() {
+            continue;
+        }
+        let best = groups
+            .iter()
+            .enumerate()
+            .map(|(g, members)| (g, likeness(notes, &stretches[members[0]].1)))
+            .filter(|&(_, l)| l >= SAME_PART)
+            .max_by(|a, b| a.1.total_cmp(&b.1));
+        match best {
+            Some((g, _)) => {
+                groups[g].push(i);
+                labels[i] = Some(g);
+            }
+            None => {
+                labels[i] = Some(groups.len());
+                groups.push(vec![i]);
+            }
+        }
+    }
+    let letter = |g: usize| {
+        let base = (b'A' + (g % 26) as u8) as char;
+        if g < 26 {
+            base.to_string()
+        } else {
+            format!("{}{}", base, g / 26)
+        }
+    };
+
+    let parts = stretches
+        .iter()
+        .enumerate()
+        .map(|(i, (bar, notes))| {
+            let (label, same, closest) = match labels[i] {
+                None => ("-".to_string(), 0.0, None),
+                Some(g) => {
+                    let same = likeness(notes, &stretches[groups[g][0]].1);
+                    let closest = groups
+                        .iter()
+                        .enumerate()
+                        .filter(|&(other, _)| other != g)
+                        .map(|(other, members)| (other, likeness(notes, &stretches[members[0]].1)))
+                        .max_by(|a, b| a.1.total_cmp(&b.1))
+                        .map(|(other, l)| (letter(other), round(l)));
+                    (letter(g), round(same), closest)
+                }
+            };
+            PartLine {
+                from_bar: *bar,
+                bars: (length / BAR).min(last + 1 - bar),
+                label,
+                notes: notes.len(),
+                same_as_first: same,
+                closest_other: closest,
+            }
+        })
+        .collect();
+
+    let groups = groups
+        .iter()
+        .enumerate()
+        .map(|(g, members)| PartGroup {
+            label: letter(g),
+            bars: members.iter().map(|&m| stretches[m].0).collect(),
+            notes: agreed(members.iter().map(|&m| stretches[m].1.as_slice()).collect())
+                .iter()
+                .map(|n| tools::NoteView {
+                    bar: n.start / BAR + 1,
+                    step: n.start % BAR / STEP + 1,
+                    note: crate::music::note_name(n.key),
+                    key: n.key,
+                    steps: n.length.div_ceil(STEP),
+                    velocity: n.velocity,
+                })
+                .collect(),
+        })
+        .collect();
+
+    Ok(Parts {
+        name: name.to_string(),
+        bars_per_part: bars_per_part.max(1),
+        parts,
+        groups,
+    })
+}
+
+// what a note is when comparing stretches, its step, note name and drum, so an octave slip still matches
+fn mark(note: &Note) -> (u32, u8, Part) {
+    (note.start / STEP, note.key % 12, note.part)
+}
+
+// how much two stretches share, from 0 for nothing to 1 for the same notes
+fn likeness(a: &[Note], b: &[Note]) -> f64 {
+    let x: std::collections::HashSet<_> = a.iter().map(mark).collect();
+    let y: std::collections::HashSet<_> = b.iter().map(mark).collect();
+    if x.is_empty() && y.is_empty() {
+        return 1.0;
+    }
+    2.0 * x.intersection(&y).count() as f64 / (x.len() + y.len()) as f64
+}
+
+// the notes at least half the stretches agree on, each with its most common octave, length and loudness
+fn agreed(stretches: Vec<&[Note]>) -> Vec<Note> {
+    let mut seen: HashMap<(u32, u8, Part), Vec<Note>> = HashMap::new();
+    for stretch in &stretches {
+        let mut here = std::collections::HashSet::new();
+        for note in stretch.iter() {
+            if here.insert(mark(note)) {
+                seen.entry(mark(note)).or_default().push(*note);
+            }
+        }
+    }
+    let needed = stretches.len().div_ceil(2);
+    let mut out: Vec<Note> = seen
+        .into_values()
+        .filter(|notes| notes.len() >= needed)
+        .map(|notes| {
+            let mut keys: HashMap<u8, usize> = HashMap::new();
+            for n in &notes {
+                *keys.entry(n.key).or_default() += 1;
+            }
+            let key = keys
+                .into_iter()
+                .max_by_key(|&(k, count)| (count, std::cmp::Reverse(k)))
+                .map_or(notes[0].key, |(k, _)| k);
+            let mut lengths: Vec<u32> = notes.iter().map(|n| n.length).collect();
+            lengths.sort_unstable();
+            let mut loudness: Vec<u8> = notes.iter().map(|n| n.velocity).collect();
+            loudness.sort_unstable();
+            Note {
+                key,
+                length: lengths[lengths.len() / 2],
+                velocity: loudness[loudness.len() / 2],
+                ..notes[0]
+            }
+        })
+        .collect();
+    out.sort_by_key(|n| (n.start, n.part, n.key));
+    out
+}
+
+// a share rounded to two places
+fn round(value: f64) -> f64 {
+    (value * 100.0).round() / 100.0
 }
 
 // the note names sounding in the other and bass stems for each span of bars, weighted by length and loudness, with a chord name, spans following the bass when per is 0

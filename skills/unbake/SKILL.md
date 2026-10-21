@@ -56,7 +56,12 @@ This is the path users liked: real producers' sounds playing the song's own fact
 
 6. **Improve it.** The description is saved next to the project as json. Change only what the user pointed at and write it under a new name (v2, v3) so they can compare. Explain each change in music terms ("the bass now holds the root and pulses 8ths an octave up, the way the song's bar 36 does").
 
-7. **Then the whole song,** once the loop works. Use `song_overview` to find the song's repeating cycle (often 8 bars of chords) and how each stretch differs: where the drums, hats, bass and lead come in and drop out, breakdowns with a kick only, builds without a snare. Keep the loop's channels and patterns, split them so each cycle starts on the song's first chord, add the few patterns the sections need (sparser kicks, other hat rhythms, fills), and place them so project bar 1 is song bar 1. Name the sections with markers that say what changes, and add `stems` from bar 1, so the whole song lines up under the arrangement. Write it as a new project next to the loop.
+7. **Then the whole song,** once the loop works. Songs change as they go, so never repeat the loop's melody, bass and chords all the way through:
+   - `song_overview` finds the song's repeating cycle (often 8 bars of chords) and where the drums, hats, bass and lead come in and drop out.
+   - `song_parts` with `melody`, `bass`, `leftover` and `drums`, from the cycle's first bar with the cycle's length, letters every cycle (A A B A C...) and gives the notes each letter agrees on. Write one pattern per letter ("Lead A", "Lead B", "Bass C") and place each letter where the song plays it. Lettered parts that appear only once have no repeats to vote out wrong notes, so clean them like the loop's motif (keep the main grid, fit the chords).
+   - `harmony` over the whole song gives each span's real chord, so the keys and the sub follow the song's changes (a Gmadd9 or a C turnaround) instead of one cycle repeated.
+   - Drums: use the grooves `song_parts` finds for `drums` (a sparse one, a full one), plus fills and crashes where the sections change.
+   - Keep the loop's sounds, place everything so project bar 1 is song bar 1, name the sections with markers saying what changes (including which melody letter plays), add `stems` from bar 1, and write it as a new project next to the loop.
 
 8. **Explain the song** as a short lesson: tempo and key and its notes, the chord progression in plain names, what the bass, drums and melody do, which parts came from the song and which from the reference, and what to try changing.
 
