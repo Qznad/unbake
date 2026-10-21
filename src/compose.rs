@@ -124,8 +124,31 @@ pub struct MarkerSpec {
 }
 
 #[derive(Serialize)]
+pub struct Reference {
+    pub name: String,
+    pub kind: String,
+    pub path: String,
+    pub title: Option<String>,
+    pub tempo: Option<f64>,
+    pub channels: Vec<String>,
+    pub patterns: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct PatternNote {
+    pub bar: u32,
+    pub step: f64,
+    pub note: String,
+    pub key: u8,
+    pub steps: f64,
+    pub velocity: u8,
+    pub channel: String,
+}
+
+#[derive(Serialize)]
 pub struct Written {
     pub path: String,
+    pub description: Option<String>,
     pub channels: usize,
     pub patterns: usize,
     pub clips: usize,
@@ -406,6 +429,7 @@ pub fn write(spec: &Loop, out: &Path, template: Option<&Path>) -> Result<Written
     events::write(&path, &project)?;
     Ok(Written {
         path: path.display().to_string(),
+        description: None,
         channels: new_channels.len(),
         patterns: built.patterns,
         clips: built.clips,
@@ -452,6 +476,186 @@ pub fn find_samples(query: &str, limit: usize) -> Result<Vec<String>, String> {
     Ok(found)
 }
 
+// writes a loop description given as json and saves the description next to the project, so it can be changed and written again
+pub fn write_json(
+    description: &serde_json::Value,
+    out: &Path,
+    template: Option<&Path>,
+) -> Result<Written, String> {
+    let spec: Loop = serde_json::from_value(description.clone())
+        .map_err(|e| format!("not a loop description: {}", e))?;
+    let mut written = write(&spec, out, template)?;
+    let path = out.join(format!("{}.json", file_name(&spec.name)));
+    let text = serde_json::to_string_pretty(description).map_err(|e| e.to_string())?;
+    std::fs::write(&path, text).map_err(|e| format!("can't write {}: {}", path.display(), e))?;
+    written.description = Some(path.display().to_string());
+    Ok(written)
+}
+
+// fl studio's own demo songs and genre templates whose name, title or channels hold every word, with their tempo and sounds
+pub fn references(query: &str, min_bpm: f64, max_bpm: f64) -> Result<Vec<Reference>, String> {
+    let root = factory_folder().ok_or("FL Studio's install folder was not found")?;
+    let words: Vec<String> = query.split_whitespace().map(|w| w.to_lowercase()).collect();
+    let data = root.join("Data");
+    let places = [
+        ("demo song", data.join("Demo projects").join("Demo songs")),
+        (
+            "template",
+            data.join("Templates").join("Advanced").join("Electronic"),
+        ),
+        (
+            "template",
+            data.join("Templates").join("Advanced").join("Instrumental"),
+        ),
+    ];
+    let installed = installed_plugins();
+    let mut found = Vec::new();
+    for (kind, folder) in places {
+        let Ok(entries) = std::fs::read_dir(&folder) else {
+            continue;
+        };
+        let mut files: Vec<PathBuf> = entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("flp")))
+            .collect();
+        files.sort();
+        for file in files {
+            let Ok(project) = events::read(&file) else {
+                continue;
+            };
+            let summary = info::summarize(&project);
+            if summary
+                .tempo
+                .is_some_and(|bpm| bpm < min_bpm || bpm > max_bpm)
+            {
+                continue;
+            }
+            let name = file
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let channels: Vec<String> = summary
+                .channels
+                .iter()
+                .filter(|c| !c.automation)
+                .map(|c| {
+                    let sound = c
+                        .sample
+                        .as_deref()
+                        .and_then(|s| s.rsplit(['\\', '/']).next())
+                        .or(c.plugin.as_deref());
+                    let missing = match (&c.plugin, &installed) {
+                        (Some(plugin), Some(installed)) if c.sample.is_none() => {
+                            !plugin.eq_ignore_ascii_case("fruity wrapper")
+                                && !installed.contains(&plugin.to_lowercase())
+                        }
+                        _ => false,
+                    };
+                    match (sound, c.volume) {
+                        _ if missing => {
+                            format!("{} ({}, not installed)", c.name, sound.unwrap_or(""))
+                        }
+                        (_, Some(0)) => format!("{} (volume 0, automated)", c.name),
+                        (Some(sound), _) => format!("{} ({})", c.name, sound),
+                        (None, _) => c.name.clone(),
+                    }
+                })
+                .collect();
+            let text = format!(
+                "{} {} {}",
+                name,
+                summary.title.as_deref().unwrap_or(""),
+                channels.join(" ")
+            )
+            .to_lowercase();
+            if !words.iter().all(|w| text.contains(w)) {
+                continue;
+            }
+            let relative = file.strip_prefix(&root).unwrap_or(&file);
+            found.push(Reference {
+                name,
+                kind: kind.to_string(),
+                path: format!(
+                    "{}/{}",
+                    FACTORY,
+                    relative.display().to_string().replace('\\', "/")
+                ),
+                title: summary.title,
+                tempo: summary.tempo,
+                channels,
+                patterns: summary
+                    .patterns
+                    .iter()
+                    .filter(|p| p.notes > 0)
+                    .map(|p| p.name.clone())
+                    .collect(),
+            });
+        }
+    }
+    found.sort_by(|a, b| a.tempo.unwrap_or(0.0).total_cmp(&b.tempo.unwrap_or(0.0)));
+    Ok(found)
+}
+
+// the plugins fl studio lists as installed in its plugin database, in lowercase, if that list is found
+fn installed_plugins() -> Option<std::collections::HashSet<String>> {
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
+    let root = PathBuf::from(home)
+        .join("Documents")
+        .join("Image-Line")
+        .join("FL Studio")
+        .join("Presets")
+        .join("Plugin database")
+        .join("Installed");
+    let mut names = std::collections::HashSet::new();
+    let mut folders = vec![root];
+    while let Some(folder) = folders.pop() {
+        let Ok(entries) = std::fs::read_dir(&folder) else {
+            continue;
+        };
+        for path in entries.flatten().map(|e| e.path()) {
+            if path.is_dir() {
+                folders.push(path);
+            } else if path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("fst"))
+            {
+                if let Some(stem) = path.file_stem() {
+                    names.insert(stem.to_string_lossy().to_lowercase());
+                }
+            }
+        }
+    }
+    (!names.is_empty()).then_some(names)
+}
+
+// the notes of a project's pattern with bars and steps counted from 1 and the channel each plays on
+pub fn pattern_view(project: &Project, name: &str) -> Result<Vec<PatternNote>, String> {
+    let names: HashMap<u16, String> = info::summarize(project)
+        .channels
+        .into_iter()
+        .map(|c| (c.id, c.name))
+        .collect();
+    let bar = project.ppq as u32 * 4;
+    let step = (project.ppq as u32 / 4).max(1);
+    let round = |v: f64| (v * 100.0).round() / 100.0;
+    Ok(reference_notes(project, name)?
+        .into_iter()
+        .map(|note| PatternNote {
+            bar: note.start / bar + 1,
+            step: round((note.start % bar) as f64 / step as f64 + 1.0),
+            note: music::note_name(note.key),
+            key: note.key,
+            steps: round(note.length as f64 / step as f64),
+            velocity: note.velocity,
+            channel: names
+                .get(&note.channel)
+                .cloned()
+                .unwrap_or_else(|| "?".to_string()),
+        })
+        .collect())
+}
+
 // the notes of a project's pattern found by name, exact first and then ignoring case
 pub fn reference_notes(project: &Project, name: &str) -> Result<Vec<TimedNote>, String> {
     let summary = info::summarize(project);
@@ -493,7 +697,7 @@ pub fn factory_folder() -> Option<PathBuf> {
 }
 
 // a path with fl studio's factory data folder filled in, so it can be opened here
-fn local_path(path: &str) -> PathBuf {
+pub fn local_path(path: &str) -> PathBuf {
     match (path.strip_prefix(FACTORY), factory_folder()) {
         (Some(rest), Some(root)) => root.join(rest.trim_start_matches(['\\', '/'])),
         _ => PathBuf::from(path),

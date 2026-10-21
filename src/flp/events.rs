@@ -196,8 +196,18 @@ fn push_varint(out: &mut Vec<u8>, mut value: usize) {
     }
 }
 
-// turns fl studio text, stored as utf-16 with a zero at the end, into a string
+// turns fl studio text into a string, utf-16 with a zero at the end, or one byte a letter in projects older than fl studio 12
 pub fn decode_text(data: &[u8]) -> String {
+    let pairs = data.len() / 2;
+    let wide = data.iter().skip(1).step_by(2).filter(|&&b| b == 0).count();
+    if pairs > 0 && wide * 2 < pairs {
+        return data
+            .iter()
+            .map(|&b| b as char)
+            .collect::<String>()
+            .trim_end_matches('\0')
+            .to_string();
+    }
     let mut units = Vec::with_capacity(data.len() / 2);
     for pair in data.chunks_exact(2) {
         units.push(u16::from_le_bytes([pair[0], pair[1]]));

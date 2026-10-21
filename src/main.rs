@@ -146,6 +146,17 @@ enum Command {
     Pattern { file: PathBuf, name: String },
 
     #[command(
+        about = "list fl studio's own demo songs and genre templates to learn from, with their tempo, sounds and patterns"
+    )]
+    References {
+        words: Vec<String>,
+        #[arg(long, default_value_t = 0.0, help = "lowest tempo")]
+        min_bpm: f64,
+        #[arg(long, default_value_t = 999.0, help = "highest tempo")]
+        max_bpm: f64,
+    },
+
+    #[command(
         about = "find samples in fl studio's own packs by words in their path, like kick or snare amen"
     )]
     Samples {
@@ -466,6 +477,7 @@ fn run(command: Command) -> Result<(), String> {
             println!("Channels:    {}", summary.channels.len());
             for channel in &summary.channels {
                 let sound = match (&channel.plugin, &channel.sample) {
+                    _ if channel.automation => "automation",
                     (_, Some(sample)) => sample.rsplit(['\\', '/']).next().unwrap_or(sample),
                     (Some(plugin), None) => plugin.as_str(),
                     (None, None) => "",
@@ -532,25 +544,36 @@ fn run(command: Command) -> Result<(), String> {
         }
         Command::Pattern { file, name } => {
             let project = flp::events::read(&file)?;
-            let notes = compose::reference_notes(&project, &name)?;
-            let names: std::collections::HashMap<u16, String> = flp::info::summarize(&project)
-                .channels
-                .into_iter()
-                .map(|c| (c.id, c.name))
-                .collect();
-            let bar = project.ppq as u32 * 4;
-            let step = (project.ppq as u32 / 4).max(1);
+            let notes = compose::pattern_view(&project, &name)?;
             println!("{}: {} notes", name, notes.len());
             for note in notes {
                 println!(
                     "  bar {:>3} step {:>5.2}  {:<5} {:>5.2} steps  velocity {:>3}  {}",
-                    note.start / bar + 1,
-                    (note.start % bar) as f64 / step as f64 + 1.0,
-                    music::note_name(note.key),
-                    note.length as f64 / step as f64,
-                    note.velocity,
-                    names.get(&note.channel).map_or("?", |n| n.as_str())
+                    note.bar, note.step, note.note, note.steps, note.velocity, note.channel
                 );
+            }
+            Ok(())
+        }
+        Command::References {
+            words,
+            min_bpm,
+            max_bpm,
+        } => {
+            for reference in compose::references(&words.join(" "), min_bpm, max_bpm)? {
+                println!(
+                    "{:>6}  {:<10} {}",
+                    reference
+                        .tempo
+                        .map(|t| format!("{:.0}", t))
+                        .unwrap_or_default(),
+                    reference.kind,
+                    reference.name
+                );
+                println!("        {}", reference.path);
+                println!("        channels: {}", reference.channels.join(", "));
+                if !reference.patterns.is_empty() {
+                    println!("        patterns: {}", reference.patterns.join(", "));
+                }
             }
             Ok(())
         }

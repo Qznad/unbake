@@ -2,6 +2,7 @@ use crate::flp::events::{self, Project, Value};
 use serde::Serialize;
 
 pub const NOTE_SIZE: usize = 24;
+const AUTOMATION: u8 = 5;
 
 #[derive(Serialize)]
 pub struct Channel {
@@ -11,6 +12,7 @@ pub struct Channel {
     pub sample: Option<String>,
     pub insert: Option<u8>,
     pub volume: Option<u32>,
+    pub automation: bool,
 }
 
 #[derive(Serialize)]
@@ -66,6 +68,7 @@ pub fn summarize(project: &Project) -> Summary {
                     sample: None,
                     insert: None,
                     volume: None,
+                    automation: false,
                 });
                 in_channel = true;
                 current_pattern = None;
@@ -83,6 +86,11 @@ pub fn summarize(project: &Project) -> Summary {
             (events::SAMPLE_PATH, Value::Data(data)) if in_channel => {
                 if let Some(channel) = channels.last_mut() {
                     channel.sample = Some(events::decode_text(data)).filter(|p| !p.is_empty());
+                }
+            }
+            (events::CHANNEL_TYPE, Value::Byte(kind)) if in_channel => {
+                if let Some(channel) = channels.last_mut() {
+                    channel.automation = *kind == AUTOMATION;
                 }
             }
             (events::CHANNEL_LEVELS, Value::Data(_)) if in_channel => {

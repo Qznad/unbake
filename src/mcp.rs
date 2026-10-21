@@ -1,3 +1,4 @@
+use crate::compose;
 use crate::doctor;
 use crate::flp;
 use crate::rebuild;
@@ -203,11 +204,60 @@ fn tools() -> Value {
         },
         {
             "name": "flp_info",
-            "description": "List the version, tempo, channels, patterns and playlist size of an FL Studio project.",
+            "description": "List what is inside an FL Studio project: version, title, tempo, every channel with its plugin or sample, mixer insert, volume and whether it is automation, the patterns with their note counts, and each mixer insert's effect chain. Paths may start with %FLStudioFactoryData%.",
             "inputSchema": {
                 "type": "object",
                 "properties": { "file": { "type": "string", "description": "path to an .flp file" } },
                 "required": ["file"]
+            }
+        },
+        {
+            "name": "references",
+            "description": "List FL Studio's own demo songs (by real producers, mostly stock plugins) and genre templates to learn from and copy sounds out of, with their tempo, channels (with plugin or sample, automated ones marked) and patterns. Filter by words and tempo. Paths start with %FLStudioFactoryData% and work in the other tools.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "words": { "type": "string", "description": "words that must appear in the name, title or channels, like break or sytrus" },
+                    "min_bpm": { "type": "number", "description": "lowest tempo" },
+                    "max_bpm": { "type": "number", "description": "highest tempo" }
+                }
+            }
+        },
+        {
+            "name": "reference_pattern",
+            "description": "List the notes of one pattern of any FL Studio project, with bar and step counted from 1 (16 steps a bar), note name (C4 is 60), length in steps, velocity and channel. Use it to read how a producer wrote a drum groove, bassline or chords.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "path to an .flp file" },
+                    "pattern": { "type": "string", "description": "the pattern's name" }
+                },
+                "required": ["file", "pattern"]
+            }
+        },
+        {
+            "name": "find_samples",
+            "description": "Find samples in FL Studio's own packs by words in their path, like 'kick', 'snare power' or 'loops break'. Returns paths starting with %FLStudioFactoryData% to use as a channel sample in compose_loop.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "words": { "type": "string", "description": "words that must all appear in the path" },
+                    "limit": { "type": "integer", "description": "how many at most, default 30" }
+                },
+                "required": ["words"]
+            }
+        },
+        {
+            "name": "compose_loop",
+            "description": "Write an FL Studio project from a loop description and save the description next to it as json, to change and write again. The description: name, tempo, bars (default 8), channels, patterns, playlist, markers and master. A channel is {name, sample, root?, volume?} with an FL pack or local sample, or {name, copy: {project, channel}, effects?, volume?}, which copies a channel from another project with its plugin, preset and mixer effects (effects false leaves them out; channels saved at volume 0 are reset to 78%). A pattern is {name, bars, notes?, grids?, copy?}: notes are {channel, bar, step, steps, key, velocity} with bar and step from 1, 16 steps a bar, key a name like Eb4 (C4 is 60) or a number; grids are {channel, bar, hits} with 16 characters a bar, X loud, x normal, o soft, g ghost, anything else a rest; copy is {project, pattern, channels: {their channel: our channel}, transpose?, from_bar?, bars?}. The playlist is a list of {pattern, track, bar, times}; without it every pattern repeats on its own track over the bars. Markers are {bar, name}. master is a project whose master effects are copied.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "loop": { "type": "object", "description": "the loop description" },
+                    "out": { "type": "string", "description": "the folder to write the project into; Documents/Image-Line/FL Studio/Projects/<name> opens straight in FL" },
+                    "template": { "type": "string", "description": "an FL Studio project to use as the template, the built in one when left out" }
+                },
+                "required": ["loop", "out"]
             }
         }
     ])
@@ -231,15 +281,52 @@ fn call_tool(params: &Value) -> Value {
         "inspect_part" => inspect_tool(args).and_then(text),
         "piano_roll" => piano_roll_tool(args),
         "write_flp" => write_tool(args).and_then(text),
-        "flp_info" => path_arg(args, "file")
+        "flp_info" => factory_arg(args, "file")
             .and_then(|file| flp::events::read(&file))
             .and_then(|project| text(flp::info::summarize(&project))),
+        "references" => compose::references(
+            args["words"].as_str().unwrap_or(""),
+            args["min_bpm"].as_f64().unwrap_or(0.0),
+            args["max_bpm"].as_f64().unwrap_or(999.0),
+        )
+        .and_then(text),
+        "reference_pattern" => reference_pattern(args).and_then(text),
+        "find_samples" => compose::find_samples(
+            args["words"].as_str().unwrap_or(""),
+            number(args, "limit", 30) as usize,
+        )
+        .and_then(text),
+        "compose_loop" => compose_tool(args).and_then(text),
         other => Err(format!("unknown tool {}", other)),
     };
     match outcome {
         Ok(content) => json!({ "content": content, "isError": false }),
         Err(e) => json!({ "content": [{ "type": "text", "text": e }], "isError": true }),
     }
+}
+
+// a path argument that may start with fl studio's factory data folder
+fn factory_arg(args: &Value, key: &str) -> Result<std::path::PathBuf, String> {
+    let path = args[key]
+        .as_str()
+        .ok_or(format!("missing argument {}", key))?;
+    Ok(compose::local_path(path))
+}
+
+// the notes of one pattern of a project
+fn reference_pattern(args: &Value) -> Result<Vec<compose::PatternNote>, String> {
+    let project = flp::events::read(&factory_arg(args, "file")?)?;
+    let name = args["pattern"]
+        .as_str()
+        .ok_or("missing argument pattern".to_string())?;
+    compose::pattern_view(&project, name)
+}
+
+// writes a loop description into a folder as an fl studio project
+fn compose_tool(args: &Value) -> Result<compose::Written, String> {
+    let out = path_arg(args, "out")?;
+    let template = optional_path(args, "template");
+    compose::write_json(&args["loop"], &out, template.as_deref())
 }
 
 // an answer as one block of indented json text
@@ -451,7 +538,7 @@ mod tests {
     #[test]
     fn lists_tools() {
         let reply = handle(&json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).unwrap();
-        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 11);
+        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 15);
         let call = handle(&json!({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": { "name": "nope", "arguments": {} }
