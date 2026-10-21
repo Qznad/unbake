@@ -3,6 +3,8 @@ use std::path::Path;
 
 pub const PING_PONG: u8 = 20;
 pub const CHANNEL_TYPE: u8 = 21;
+pub const CHANNEL_INSERT: u8 = 22;
+pub const SLOT_INDEX: u8 = 98;
 pub const CHANNEL_NEW: u8 = 64;
 pub const PATTERN_NEW: u8 = 65;
 pub const ARRANGEMENT_NEW: u8 = 99;
@@ -10,14 +12,20 @@ pub const ROOT_NOTE: u8 = 135;
 pub const MARKER_POSITION: u8 = 148;
 pub const TEMPO: u8 = 156;
 pub const PATTERN_NAME: u8 = 193;
+pub const TITLE: u8 = 194;
 pub const VERSION: u8 = 199;
+pub const PLUGIN_NAME: u8 = 201;
+pub const PLUGIN_DATA: u8 = 212;
 pub const CHANNEL_NAME: u8 = 203;
+pub const INSERT_NAME: u8 = 204;
 pub const MARKER_NAME: u8 = 205;
 pub const SAMPLE_PATH: u8 = 196;
 pub const DATA_PATH: u8 = 202;
 pub const PATTERN_NOTES: u8 = 224;
 pub const PLAYLIST: u8 = 233;
 pub const TRACK_DATA: u8 = 238;
+pub const INSERT_ROUTING: u8 = 235;
+pub const INSERT_FLAGS: u8 = 236;
 pub const TRACK_NAME: u8 = 239;
 
 #[derive(Clone, Debug, PartialEq)]

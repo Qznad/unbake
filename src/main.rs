@@ -9,6 +9,7 @@ mod arrange;
 mod audio;
 mod basic_pitch;
 mod compare;
+mod compose;
 mod doctor;
 mod eval;
 mod evidence;
@@ -119,8 +120,40 @@ enum Command {
         project: ProjectArgs,
     },
 
-    #[command(about = "list the version, tempo, channels and patterns of an fl studio project")]
+    #[command(
+        about = "list the version, tempo, channels with their sounds, patterns and mixer effects of an fl studio project"
+    )]
     FlpInfo { file: PathBuf },
+
+    #[command(
+        about = "write an fl studio project from a loop description in json: tempo, channels, patterns and clips"
+    )]
+    Compose {
+        spec: PathBuf,
+        #[arg(
+            short,
+            long,
+            help = "the folder to write the project into, by default next to the json"
+        )]
+        out: Option<PathBuf>,
+        #[arg(long, help = "an fl studio project to use as the template")]
+        template: Option<PathBuf>,
+    },
+
+    #[command(
+        about = "list the notes of one pattern of an fl studio project, by channel, bar and step"
+    )]
+    Pattern { file: PathBuf, name: String },
+
+    #[command(
+        about = "find samples in fl studio's own packs by words in their path, like kick or snare amen"
+    )]
+    Samples {
+        #[arg(required = true)]
+        words: Vec<String>,
+        #[arg(long, default_value_t = 30, help = "how many to list at most")]
+        limit: usize,
+    },
 
     #[command(
         about = "score a rebuild against the song's real notes, its fl studio project or a slakh track folder"
@@ -421,6 +454,9 @@ fn run(command: Command) -> Result<(), String> {
             let project = flp::events::read(&file)?;
             let summary = flp::info::summarize(&project);
             println!("Version:     {}", summary.version);
+            if let Some(title) = &summary.title {
+                println!("Title:       {}", title);
+            }
             println!("PPQ:         {}", summary.ppq);
             match summary.tempo {
                 Some(bpm) => println!("Tempo:       {} bpm", bpm),
@@ -429,7 +465,19 @@ fn run(command: Command) -> Result<(), String> {
             println!("Events:      {}", project.events.len());
             println!("Channels:    {}", summary.channels.len());
             for channel in &summary.channels {
-                println!("  {:>3}  {}", channel.id, channel.name);
+                let sound = match (&channel.plugin, &channel.sample) {
+                    (_, Some(sample)) => sample.rsplit(['\\', '/']).next().unwrap_or(sample),
+                    (Some(plugin), None) => plugin.as_str(),
+                    (None, None) => "",
+                };
+                let insert = channel
+                    .insert
+                    .map(|i| format!("  -> insert {}", i))
+                    .unwrap_or_default();
+                println!(
+                    "  {:>3}  {:<32} {}{}",
+                    channel.id, channel.name, sound, insert
+                );
             }
             println!("Patterns:    {}", summary.patterns.len());
             for pattern in &summary.patterns {
@@ -439,6 +487,72 @@ fn run(command: Command) -> Result<(), String> {
                 );
             }
             println!("Playlist:    {} clips", summary.playlist_items);
+            let used: Vec<_> = summary
+                .inserts
+                .iter()
+                .filter(|i| !i.effects.is_empty())
+                .collect();
+            println!("Mixer:       {} inserts with effects", used.len());
+            for insert in used {
+                println!(
+                    "  {:>3}  {:<24} {}",
+                    insert.index,
+                    insert.name.as_deref().unwrap_or(""),
+                    insert.effects.join(" > ")
+                );
+            }
+            Ok(())
+        }
+        Command::Compose {
+            spec,
+            out,
+            template,
+        } => {
+            let text = std::fs::read_to_string(&spec)
+                .map_err(|e| format!("can't read {}: {}", spec.display(), e))?;
+            let description: compose::Loop = serde_json::from_str(&text)
+                .map_err(|e| format!("{} is not a loop description: {}", spec.display(), e))?;
+            let folder =
+                out.unwrap_or_else(|| spec.parent().map(|p| p.to_path_buf()).unwrap_or_default());
+            let written = compose::write(&description, &folder, template.as_deref())?;
+            println!("Project:     {}", written.path);
+            println!(
+                "Wrote:       {} channels, {} patterns, {} clips",
+                written.channels, written.patterns, written.clips
+            );
+            for warning in &written.warnings {
+                println!("Warning:     {}", warning);
+            }
+            Ok(())
+        }
+        Command::Pattern { file, name } => {
+            let project = flp::events::read(&file)?;
+            let notes = compose::reference_notes(&project, &name)?;
+            let names: std::collections::HashMap<u16, String> = flp::info::summarize(&project)
+                .channels
+                .into_iter()
+                .map(|c| (c.id, c.name))
+                .collect();
+            let bar = project.ppq as u32 * 4;
+            let step = (project.ppq as u32 / 4).max(1);
+            println!("{}: {} notes", name, notes.len());
+            for note in notes {
+                println!(
+                    "  bar {:>3} step {:>5.2}  {:<5} {:>5.2} steps  velocity {:>3}  {}",
+                    note.start / bar + 1,
+                    (note.start % bar) as f64 / step as f64 + 1.0,
+                    music::note_name(note.key),
+                    note.length as f64 / step as f64,
+                    note.velocity,
+                    names.get(&note.channel).map_or("?", |n| n.as_str())
+                );
+            }
+            Ok(())
+        }
+        Command::Samples { words, limit } => {
+            for sample in compose::find_samples(&words.join(" "), limit)? {
+                println!("{}", sample);
+            }
             Ok(())
         }
         Command::Eval { project, rebuild } => {

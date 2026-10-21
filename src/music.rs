@@ -111,3 +111,31 @@ impl Grid {
 pub fn note_name(key: u8) -> String {
     format!("{}{}", NOTE_NAMES[key as usize % 12], key as i32 / 12 - 1)
 }
+
+// the midi key of a note name like C4, D#3 or Eb5, where C4 is 60
+pub fn parse_note(name: &str) -> Option<u8> {
+    let name = name.trim();
+    let mut chars = name.chars();
+    let letter = chars.next()?.to_ascii_uppercase();
+    let base: i32 = match letter {
+        'C' => 0,
+        'D' => 2,
+        'E' => 4,
+        'F' => 5,
+        'G' => 7,
+        'A' => 9,
+        'B' => 11,
+        _ => return None,
+    };
+    let rest = chars.as_str();
+    let (shift, octave) = if let Some(r) = rest.strip_prefix('#') {
+        (1, r)
+    } else if let Some(r) = rest.strip_prefix('b') {
+        (-1, r)
+    } else {
+        (0, rest)
+    };
+    let octave: i32 = octave.parse().ok()?;
+    let key = (octave + 1) * 12 + base + shift;
+    (0..=127).contains(&key).then_some(key as u8)
+}

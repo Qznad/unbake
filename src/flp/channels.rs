@@ -77,6 +77,43 @@ pub fn copy_channel(
     copy
 }
 
+// a copy of another project's channel with its plugin and preset, given a new number and name
+pub fn copy_block(from: &Project, block: &Block, id: u16, name: &str) -> Vec<Event> {
+    let mut copy: Vec<Event> = from.events[block.start..block.end].to_vec();
+    if let Some(first) = copy.first_mut() {
+        first.value = Value::Word(id);
+    }
+    let text = Value::Data(events::encode_text(name));
+    match copy.iter_mut().find(|e| e.id == events::CHANNEL_NAME) {
+        Some(event) => event.value = text,
+        None => {
+            let at = copy
+                .iter()
+                .position(|e| e.id == events::PLUGIN_DATA)
+                .or_else(|| copy.iter().position(|e| e.id == events::PLUGIN_NAME))
+                .map_or(1, |i| i + 1)
+                .min(copy.len());
+            copy.insert(
+                at,
+                Event {
+                    id: events::CHANNEL_NAME,
+                    value: text,
+                },
+            );
+        }
+    }
+    copy
+}
+
+// sends a channel's events to a mixer insert
+pub fn route(events: &mut [Event], insert: u8) {
+    for event in events.iter_mut() {
+        if event.id == events::CHANNEL_INSERT {
+            event.value = Value::Byte(insert);
+        }
+    }
+}
+
 // gives an existing channel a new sample file and root note, and a new name when one is given
 pub fn set_channel(project: &mut Project, id: u16, name: Option<&str>, sample: &str, root: u8) {
     let Some(block) = blocks(project).into_iter().find(|b| b.id == id) else {

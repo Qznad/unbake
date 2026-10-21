@@ -40,6 +40,36 @@ pub struct Sound {
     pub root: u8,
 }
 
+pub enum ChannelSource<'a> {
+    Sample { path: String, root: u8 },
+    Copy { from: &'a Project, block: Block },
+}
+
+pub struct NewChannel<'a> {
+    pub name: String,
+    pub source: ChannelSource<'a>,
+}
+
+pub struct NewNote {
+    pub channel: usize,
+    pub start: u32,
+    pub length: u32,
+    pub key: u8,
+    pub velocity: u8,
+}
+
+pub struct NewPattern {
+    pub name: String,
+    pub notes: Vec<NewNote>,
+}
+
+pub struct NewClip {
+    pub pattern: usize,
+    pub start: u32,
+    pub length: u32,
+    pub track: u16,
+}
+
 pub struct Extras {
     pub sounds: Vec<Sound>,
     pub stems: Vec<Stem>,
@@ -96,47 +126,16 @@ pub fn build(
             continue;
         }
         pattern_ids.push(Some(next_id));
-        pattern_events.push(Event {
-            id: events::PATTERN_NEW,
-            value: Value::Word(next_id),
-        });
+        pattern_events.extend(pattern_block(next_id, &pattern.name, notes));
         next_id += 1;
-        pattern_events.push(Event {
-            id: events::PATTERN_NAME,
-            value: Value::Data(events::encode_text(&pattern.name)),
-        });
-        pattern_events.push(Event {
-            id: events::PATTERN_NOTES,
-            value: Value::Data(notes),
-        });
     }
     let first_channel = project
         .find(events::CHANNEL_NEW)
         .ok_or("the template has no channels")?;
     insert_events(&mut project, first_channel, pattern_events);
 
-    let arrangement_start = project
-        .find(events::ARRANGEMENT_NEW)
-        .ok_or("the template has no arrangement, save it with FL Studio 20 or newer".to_string())?;
-    let playlist = (arrangement_start..project.events.len())
-        .find(|&i| project.events[i].id == events::PLAYLIST)
-        .ok_or("the template has no playlist".to_string())?;
-
-    let item_size = info::playlist_item_size(template);
-    let extra = match &project.events[playlist].value {
-        Value::Data(data) if item_size > 32 && data.len() >= item_size => {
-            data[32..item_size].to_vec()
-        }
-        _ if item_size > 32 => {
-            warnings.push(
-                "FL Studio 21+ template has no clip in its playlist to copy from, \
-                 place one pattern clip in the template if the project won't open"
-                    .to_string(),
-            );
-            vec![0; item_size - 32]
-        }
-        _ => Vec::new(),
-    };
+    let (arrangement_start, playlist) = find_playlist(&project)?;
+    let extra = clip_extra(template, &project, playlist, &mut warnings);
 
     let mut items: Vec<Vec<u8>> = Vec::new();
     for clip in &arrangement.clips {
@@ -163,27 +162,11 @@ pub fn build(
             &extra,
         ));
     }
-    items.sort_by_key(|item| u32::from_le_bytes([item[0], item[1], item[2], item[3]]));
-    for (n, item) in items.iter_mut().enumerate() {
-        if item.len() >= 36 {
-            item[32..36].copy_from_slice(&(n as u32 + 1).to_le_bytes());
-        }
-    }
     let clips = items.len();
-    project.events[playlist].value = Value::Data(items.concat());
-
-    let mut marker_events = Vec::new();
-    for marker in markers {
-        marker_events.push(Event {
-            id: events::MARKER_POSITION,
-            value: Value::Dword(scale(marker.tick + extras.shift)),
-        });
-        marker_events.push(Event {
-            id: events::MARKER_NAME,
-            value: Value::Data(events::encode_text(&marker.name)),
-        });
-    }
-    insert_events(&mut project, playlist + 1, marker_events);
+    set_playlist(&mut project, playlist, items);
+    add_markers(&mut project, playlist, markers, |tick| {
+        scale(tick + extras.shift)
+    });
 
     for (track, name) in track_names.iter().enumerate() {
         name_track(&mut project, arrangement_start, track as u32 + 1, name);
@@ -200,6 +183,183 @@ pub fn build(
         clips,
         warnings,
     })
+}
+
+// replaces a template's channels with new ones and fills it with named patterns, placed clips, markers and track names
+pub fn compose(
+    template: &Project,
+    new_channels: &[NewChannel],
+    patterns: &[NewPattern],
+    clips: &[NewClip],
+    track_names: &[String],
+    bpm: f64,
+    markers: &[Marker],
+) -> Result<Built, String> {
+    let mut project = template.clone();
+    let mut warnings = Vec::new();
+    let ppq = template.ppq as u64;
+    let scale = |tick: u32| (tick as u64 * ppq / PPQ as u64) as u32;
+    set_tempo(&mut project, bpm);
+
+    let blocks = channels::blocks(&project);
+    let model = blocks
+        .iter()
+        .find(|b| b.kind == SAMPLER)
+        .ok_or("the template has no sampler channel to copy")?
+        .clone();
+    let mut channel_events = Vec::new();
+    for (n, channel) in new_channels.iter().enumerate() {
+        let id = n as u16;
+        let mut events = match &channel.source {
+            ChannelSource::Sample { path, root } => {
+                channels::copy_channel(&project, &model, id, &channel.name, path, *root)
+            }
+            ChannelSource::Copy { from, block } => {
+                channels::copy_block(from, block, id, &channel.name)
+            }
+        };
+        channels::route(&mut events, (n + 1).min(125) as u8);
+        channel_events.extend(events);
+    }
+    let at = blocks.first().map_or(0, |b| b.start);
+    for block in blocks.iter().rev() {
+        project.events.drain(block.start..block.end);
+    }
+    insert_events(&mut project, at, channel_events);
+    project.channel_count = new_channels.len() as u16;
+
+    let mut pattern_events = Vec::new();
+    for (n, new) in patterns.iter().enumerate() {
+        let mut notes = Vec::new();
+        for note in &new.notes {
+            notes.extend(note_bytes(
+                note.channel as u16,
+                scale(note.start),
+                scale(note.length),
+                note.key,
+                note.velocity,
+            ));
+        }
+        pattern_events.extend(pattern_block(n as u16 + 1, &new.name, notes));
+    }
+    let first_channel = project
+        .find(events::CHANNEL_NEW)
+        .ok_or("no channels to write")?;
+    insert_events(&mut project, first_channel, pattern_events);
+
+    let (arrangement_start, playlist) = find_playlist(&project)?;
+    let extra = clip_extra(template, &project, playlist, &mut warnings);
+    let items: Vec<Vec<u8>> = clips
+        .iter()
+        .map(|clip| {
+            item_bytes(
+                PATTERN_BASE + clip.pattern as u16 + 1,
+                scale(clip.start),
+                scale(clip.length),
+                clip.track,
+                (-1i32).to_le_bytes(),
+                &extra,
+            )
+        })
+        .collect();
+    let count = items.len();
+    set_playlist(&mut project, playlist, items);
+    add_markers(&mut project, playlist, markers, scale);
+    for (track, name) in track_names.iter().enumerate() {
+        name_track(&mut project, arrangement_start, track as u32 + 1, name);
+    }
+
+    Ok(Built {
+        project,
+        patterns: patterns.len(),
+        clips: count,
+        warnings,
+    })
+}
+
+// the events of one pattern, its number, name and notes
+fn pattern_block(id: u16, name: &str, notes: Vec<u8>) -> Vec<Event> {
+    vec![
+        Event {
+            id: events::PATTERN_NEW,
+            value: Value::Word(id),
+        },
+        Event {
+            id: events::PATTERN_NAME,
+            value: Value::Data(events::encode_text(name)),
+        },
+        Event {
+            id: events::PATTERN_NOTES,
+            value: Value::Data(notes),
+        },
+    ]
+}
+
+// where the first arrangement starts and where its playlist event is
+fn find_playlist(project: &Project) -> Result<(usize, usize), String> {
+    let arrangement_start = project
+        .find(events::ARRANGEMENT_NEW)
+        .ok_or("the template has no arrangement, save it with FL Studio 20 or newer".to_string())?;
+    let playlist = (arrangement_start..project.events.len())
+        .find(|&i| project.events[i].id == events::PLAYLIST)
+        .ok_or("the template has no playlist".to_string())?;
+    Ok((arrangement_start, playlist))
+}
+
+// the bytes fl studio 21 and newer add to each clip, copied from a clip in the template
+fn clip_extra(
+    template: &Project,
+    project: &Project,
+    playlist: usize,
+    warnings: &mut Vec<String>,
+) -> Vec<u8> {
+    let item_size = info::playlist_item_size(template);
+    match &project.events[playlist].value {
+        Value::Data(data) if item_size > 32 && data.len() >= item_size => {
+            data[32..item_size].to_vec()
+        }
+        _ if item_size > 32 => {
+            warnings.push(
+                "FL Studio 21+ template has no clip in its playlist to copy from, \
+                 place one pattern clip in the template if the project won't open"
+                    .to_string(),
+            );
+            vec![0; item_size - 32]
+        }
+        _ => Vec::new(),
+    }
+}
+
+// writes the clips into the playlist in time order, numbering them as fl studio does
+fn set_playlist(project: &mut Project, playlist: usize, mut items: Vec<Vec<u8>>) {
+    items.sort_by_key(|item| u32::from_le_bytes([item[0], item[1], item[2], item[3]]));
+    for (n, item) in items.iter_mut().enumerate() {
+        if item.len() >= 36 {
+            item[32..36].copy_from_slice(&(n as u32 + 1).to_le_bytes());
+        }
+    }
+    project.events[playlist].value = Value::Data(items.concat());
+}
+
+// puts the markers right after the playlist, with their ticks converted for the project
+fn add_markers(
+    project: &mut Project,
+    playlist: usize,
+    markers: &[Marker],
+    tick: impl Fn(u32) -> u32,
+) {
+    let mut marker_events = Vec::new();
+    for marker in markers {
+        marker_events.push(Event {
+            id: events::MARKER_POSITION,
+            value: Value::Dword(tick(marker.tick)),
+        });
+        marker_events.push(Event {
+            id: events::MARKER_NAME,
+            value: Value::Data(events::encode_text(&marker.name)),
+        });
+    }
+    insert_events(project, playlist + 1, marker_events);
 }
 
 // gives every part a channel and every stem an audio channel, copying the template's own channels as models

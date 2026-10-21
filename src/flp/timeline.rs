@@ -17,6 +17,7 @@ pub struct TimedNote {
     pub start: u32,
     pub length: u32,
     pub key: u8,
+    pub velocity: u8,
 }
 
 // every note the project plays, with each pattern's notes placed wherever the playlist puts that pattern
@@ -58,7 +59,7 @@ pub fn timeline(project: &Project) -> Vec<TimedNote> {
 }
 
 // the notes stored in each pattern, by pattern number, with times inside the pattern
-fn pattern_notes(project: &Project) -> HashMap<u16, Vec<TimedNote>> {
+pub fn pattern_notes(project: &Project) -> HashMap<u16, Vec<TimedNote>> {
     let mut patterns: HashMap<u16, Vec<TimedNote>> = HashMap::new();
     let mut current: Option<u16> = None;
     for event in &project.events {
@@ -75,6 +76,7 @@ fn pattern_notes(project: &Project) -> HashMap<u16, Vec<TimedNote>> {
                         channel: u16::from_le_bytes([note[6], note[7]]),
                         length: u32::from_le_bytes([note[8], note[9], note[10], note[11]]),
                         key: u16::from_le_bytes([note[12], note[13]]).min(127) as u8,
+                        velocity: (note[21] as u32 * 127 / 128) as u8,
                     });
                 }
             }

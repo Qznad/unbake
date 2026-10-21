@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-const BUILT_IN_TEMPLATE: &[u8] = include_bytes!("../assets/template.flp");
+pub const BUILT_IN_TEMPLATE: &[u8] = include_bytes!("../assets/template.flp");
 const SESSION_FILE: &str = "extras/session.json";
 
 pub struct Options {
