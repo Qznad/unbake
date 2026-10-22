@@ -209,8 +209,21 @@ fn tools() -> Value {
         },
         {
             "name": "song_overview",
-            "description": "One line per bar of a transcribed folder: the section starting there, how many kick, snare, hat, bass and other-stem notes it has, and the chord heard (like Am9, from the bass note and the notes above it). Use it to find where parts come in and drop out, and where the main section is.",
+            "description": "One line per bar of a transcribed folder: the section starting there, how many kick, snare, hat, bass and other-stem notes it has, the chord heard (like Am9, from the bass note and the notes above it, or from the notes alone where no bass plays), and how each stem sounds: drums_db, bass_db and other_db are its level against its own loud bars (0 is as loud as it gets, -10 is 10 dB quieter, missing when silent), and drums_top_khz is the frequency below which most of the drums' energy sits, so drums behind a low-pass filter read low (0.3) and rise as the filter opens (5 to 6 is a usual open kit). Use it to find where parts come in and drop out, where the main section is, and which sections are faded or filtered versions of others.",
             "inputSchema": { "type": "object", "properties": { "folder": folder }, "required": ["folder"] }
+        },
+        {
+            "name": "sounds_like",
+            "description": "The bars elsewhere in the song that sound most like a stretch, measured straight from the stems and whatever their level: chords compares which note names sound in the other stem (the song's overall key taken out, so 0 is unrelated and 0.6 or more is close), drums compares where the drum hits fall on the 16 steps. Each match gives its first bar, section, likeness and its levels. Intros, breakdowns and builds are often a quieter or filtered copy of a drop, and they transcribe badly (few drum hits, wrong notes from a filter, no bass); use this on them to find the loud bars they come from and build them from those bars' parts. Likeness under about 0.3 means no clear match.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": folder,
+                    "from_bar": from_bar,
+                    "bars": { "type": "integer", "description": "how many bars, default 4; use the song's chord cycle" }
+                },
+                "required": ["folder"]
+            }
         },
         {
             "name": "part_grid",
@@ -244,7 +257,7 @@ fn tools() -> Value {
         },
         {
             "name": "harmony",
-            "description": "For each bar or span of bars of a transcribed folder, the note names sounding in the other stem as percentages (weighted by length and loudness), the bass note, and a chord name with its extensions (Am9, Gm11, Bbmaj9) built from them. Richer than the chords finding, which only names triads. The chord is named from the bass note, so when the bass walks under a held chord the name follows the bass (Cm9 over an Eb bass reads Ebmaj13, the same notes); check the tones. Use it to voice the chords of a loop.",
+            "description": "For each bar or span of bars of a transcribed folder, the note names sounding in the other stem as percentages (weighted by length and loudness), the bass note, and a chord name with its extensions (Am9, Gm11, Bbmaj9) built from them. Richer than the chords finding, which only names triads. The chord is named from the bass note, so when the bass walks under a held chord the name follows the bass (Cm9 over an Eb bass reads Ebmaj13, the same notes); check the tones. Where no bass plays (a stray low note doesn't count) each bar is its own span, named from the notes alone. Quiet or filtered bars can give wrong notes, so check them with sounds_like. Use it to voice the chords of a loop.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -346,6 +359,15 @@ fn call_tool(params: &Value) -> Value {
         "piano_roll" => piano_roll_tool(args),
         "song_overview" => path_arg(args, "folder")
             .and_then(|folder| views::overview(&folder))
+            .and_then(text),
+        "sounds_like" => path_arg(args, "folder")
+            .and_then(|folder| {
+                crate::listen::sounds_like(
+                    &folder,
+                    number(args, "from_bar", 1),
+                    number(args, "bars", 4),
+                )
+            })
             .and_then(text),
         "part_grid" => grid_tool(args).and_then(text),
         "song_parts" => parts_tool(args).and_then(text),
@@ -691,11 +713,11 @@ mod tests {
         );
     }
 
-    // the tool list has twenty tools and an unknown tool comes back as an error result
+    // the tool list has twenty-one tools and an unknown tool comes back as an error result
     #[test]
     fn lists_tools() {
         let reply = handle(&json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).unwrap();
-        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 20);
+        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 21);
         let call = handle(&json!({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": { "name": "nope", "arguments": {} }

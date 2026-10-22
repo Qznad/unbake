@@ -16,6 +16,7 @@ mod eval;
 mod evidence;
 mod findings;
 mod flp;
+mod listen;
 mod matching;
 mod mcp;
 mod midi;
@@ -105,9 +106,20 @@ enum Command {
     },
 
     #[command(
-        about = "one line per bar of a transcribed folder: its section, kick, snare, hat, bass and other note counts and the chord heard"
+        about = "one line per bar of a transcribed folder: its section, kick, snare, hat, bass and other note counts, the chord heard, each stem's level and how high the drums reach"
     )]
     Overview { folder: PathBuf },
+
+    #[command(
+        about = "the bars elsewhere in the song that sound most like a stretch, in chords and in drum rhythm, however quiet or filtered it is"
+    )]
+    SoundsLike {
+        folder: PathBuf,
+        #[arg(long, default_value_t = 1, help = "first bar, counting from 1")]
+        from_bar: u32,
+        #[arg(long, default_value_t = 4, help = "how many bars")]
+        bars: u32,
+    },
 
     #[command(
         about = "show a part as 16 steps per bar: drums as hit strings compose takes, pitched parts as the note on each step"
@@ -511,10 +523,13 @@ fn run(command: Command) -> Result<(), String> {
             Ok(())
         }
         Command::Overview { folder } => {
-            println!("  bar  section     kick snare  hat  bass other  chord");
+            println!(
+                "  bar  section     kick snare  hat  bass other   drums dB  top kHz  bass dB  other dB  chord"
+            );
+            let show = |value: Option<i32>| value.map(|v| v.to_string()).unwrap_or("-".into());
             for line in views::overview(&folder)? {
                 println!(
-                    "  {:>3}  {:<10} {:>4} {:>5} {:>4} {:>5} {:>5}  {}",
+                    "  {:>3}  {:<10} {:>4} {:>5} {:>4} {:>5} {:>5}   {:>8}  {:>7}  {:>7}  {:>8}  {}",
                     line.bar,
                     line.section.as_deref().unwrap_or(""),
                     line.kick,
@@ -522,8 +537,48 @@ fn run(command: Command) -> Result<(), String> {
                     line.hat,
                     line.bass,
                     line.other,
+                    show(line.drums_db),
+                    line.drums_top_khz
+                        .map(|v| format!("{:.1}", v))
+                        .unwrap_or("-".into()),
+                    show(line.bass_db),
+                    show(line.other_db),
                     line.chord.as_deref().unwrap_or("")
                 );
+            }
+            Ok(())
+        }
+        Command::SoundsLike {
+            folder,
+            from_bar,
+            bars,
+        } => {
+            let like = listen::sounds_like(&folder, from_bar, bars)?;
+            let level = |db: Option<i32>, top: Option<f64>, other: Option<i32>| {
+                format!(
+                    "drums {} dB up to {} kHz, other {} dB",
+                    db.map(|v| v.to_string()).unwrap_or("-".into()),
+                    top.map(|v| format!("{:.1}", v)).unwrap_or("-".into()),
+                    other.map(|v| v.to_string()).unwrap_or("-".into())
+                )
+            };
+            println!(
+                "Bars {}-{}: {}",
+                like.from_bar,
+                like.from_bar + like.bars - 1,
+                level(like.drums_db, like.drums_top_khz, like.other_db)
+            );
+            for (title, found) in [("Chords like", &like.chords), ("Drums like", &like.drums)] {
+                println!("{}:{}", title, if found.is_empty() { " none" } else { "" });
+                for m in found {
+                    println!(
+                        "  bar {:>3}  {:.2}  {:<10} {}",
+                        m.bar,
+                        m.likeness,
+                        m.section.as_deref().unwrap_or(""),
+                        level(m.drums_db, m.drums_top_khz, m.other_db)
+                    );
+                }
             }
             Ok(())
         }

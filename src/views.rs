@@ -9,6 +9,7 @@ const NAMES: [&str; 12] = [
     "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B",
 ];
 const PRESENT: f64 = 0.08;
+const BASS_PLAYS: f64 = 0.25;
 const THIRD: f64 = 0.04;
 const SAME_PART: f64 = 0.3;
 const VARIATION: f64 = 0.15;
@@ -23,6 +24,14 @@ pub struct BarLine {
     pub bass: usize,
     pub other: usize,
     pub chord: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drums_db: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drums_top_khz: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bass_db: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub other_db: Option<i32>,
 }
 
 #[derive(Serialize)]
@@ -80,9 +89,17 @@ pub struct HarmonySpan {
     pub tones: Vec<Tone>,
 }
 
-// one line per bar with its section, how many drum, bass and other notes it holds and the chord heard
+// one line per bar with its section, how many drum, bass and other notes it holds, the chord heard, how loud each stem is and how high the drums reach
 pub fn overview(folder: &Path) -> Result<Vec<BarLine>, String> {
     let session = rebuild::load_session(folder)?;
+    let measures = crate::listen::measure(folder, &session);
+    let db = |values: &[Option<f64>], bar: u32| {
+        values
+            .get(bar as usize)
+            .copied()
+            .flatten()
+            .map(|v| v.round() as i32)
+    };
     let count = |notes: &[Note], bar: u32, part: Option<Part>| {
         notes
             .iter()
@@ -107,6 +124,15 @@ pub fn overview(folder: &Path) -> Result<Vec<BarLine>, String> {
                 .iter()
                 .find(|s| bar + 1 >= s.from_bar && bar + 1 < s.from_bar + s.bars)
                 .and_then(|s| s.chord.clone()),
+            drums_db: db(&measures.drums_db, bar),
+            drums_top_khz: measures
+                .drums_top
+                .get(bar as usize)
+                .copied()
+                .flatten()
+                .map(|v| (v * 10.0).round() / 10.0),
+            bass_db: db(&measures.bass_db, bar),
+            other_db: db(&measures.other_db, bar),
         })
         .collect())
 }
@@ -474,20 +500,15 @@ pub fn harmony(
         .collect())
 }
 
-// one span for each run of bars whose loudest bass note stays the same
+// one span for each run of bars whose loudest bass note stays the same, and one for each bar where no bass plays
 fn bass_spans(session: &Session, first: u32, last: u32) -> Vec<HarmonySpan> {
     let roots: Vec<Option<usize>> = (first..last)
-        .map(|bar| {
-            let low = weights(&session.bass, bar * BAR, (bar + 1) * BAR);
-            (0..12)
-                .filter(|&pc| low[pc] > 0.0)
-                .max_by(|&a, &b| low[a].total_cmp(&low[b]))
-        })
+        .map(|bar| bass_root(&session.bass, bar * BAR, (bar + 1) * BAR))
         .collect();
     let mut spans = Vec::new();
     let mut start = 0;
     for i in 1..=roots.len() {
-        if i == roots.len() || roots[i] != roots[start] {
+        if i == roots.len() || roots[i] != roots[start] || roots[start].is_none() {
             spans.push(span(session, first + start as u32, (i - start) as u32));
             start = i;
         }
@@ -495,12 +516,30 @@ fn bass_spans(session: &Session, first: u32, last: u32) -> Vec<HarmonySpan> {
     spans
 }
 
+// the loudest bass note between two ticks, when the bass plays for at least a quarter of that time, so a stray low note doesn't count
+fn bass_root(bass: &[Note], start: u32, end: u32) -> Option<usize> {
+    let played: u32 = bass
+        .iter()
+        .map(|n| {
+            (n.start + n.length)
+                .min(end)
+                .saturating_sub(n.start.max(start))
+        })
+        .sum();
+    if (played as f64) < BASS_PLAYS * end.saturating_sub(start) as f64 {
+        return None;
+    }
+    let low = weights(bass, start, end);
+    (0..12)
+        .filter(|&pc| low[pc] > 0.0)
+        .max_by(|&a, &b| low[a].total_cmp(&low[b]))
+}
+
 // the harmony of some bars starting at a 0 based bar
 fn span(session: &Session, bar: u32, bars: u32) -> HarmonySpan {
     let start = bar * BAR;
     let end = start + bars * BAR;
     let other = weights(&session.other, start, end);
-    let low = weights(&session.bass, start, end);
     let total: f64 = other.iter().sum();
     let mut order: Vec<usize> = (0..12).filter(|&pc| other[pc] > 0.0).collect();
     order.sort_by(|&a, &b| other[b].total_cmp(&other[a]));
@@ -512,15 +551,12 @@ fn span(session: &Session, bar: u32, bars: u32) -> HarmonySpan {
             percent: (100.0 * other[pc] / total.max(1e-9)).round() as u32,
         })
         .collect();
-    let root = (0..12)
-        .filter(|&pc| low[pc] > 0.0)
-        .max_by(|&a, &b| low[a].total_cmp(&low[b]));
+    let root = bass_root(&session.bass, start, end);
+    let shares: Vec<f64> = other.iter().map(|w| w / total.max(1e-9)).collect();
     let chord = match root {
-        Some(root) if total > 0.0 => {
-            let shares: Vec<f64> = other.iter().map(|w| w / total).collect();
-            name_over_bass(root, &shares)
-        }
-        _ => None,
+        _ if total <= 0.0 => None,
+        Some(root) => name_over_bass(root, &shares),
+        None => name_alone(&shares),
     };
     HarmonySpan {
         from_bar: bar + 1,
@@ -552,14 +588,25 @@ pub fn name_over_bass(bass: usize, shares: &[f64]) -> Option<String> {
     if at(7) >= PRESENT || (third && colour) {
         return Some(chord_name(bass, shares));
     }
-    let root = (0..12)
+    let root = best_root(shares)?;
+    (fits(root, shares) >= 2).then(|| format!("{}/{}", chord_name(root, shares), NAMES[bass]))
+}
+
+// the chord the notes make on their own when no bass plays, or none when they don't make one
+pub fn name_alone(shares: &[f64]) -> Option<String> {
+    let root = best_root(shares)?;
+    (fits(root, shares) >= 2).then(|| chord_name(root, shares))
+}
+
+// the heard note with the most of its own third and fifth heard too, the louder one winning a tie
+fn best_root(shares: &[f64]) -> Option<usize> {
+    (0..12)
         .filter(|&pc| shares[pc] >= PRESENT)
         .max_by(|&a, &b| {
             fits(a, shares)
                 .cmp(&fits(b, shares))
                 .then(shares[a].total_cmp(&shares[b]))
-        })?;
-    (fits(root, shares) >= 2).then(|| format!("{}/{}", chord_name(root, shares), NAMES[bass]))
+        })
 }
 
 // how many of a root's own note, third and fifth are heard, the bass counting as its own note
@@ -657,5 +704,32 @@ mod tests {
         assert_eq!(name_over_bass(10, &over_b_flat).as_deref(), Some("C/Bb"));
         let thin = shares(&[(4, 55.0), (2, 45.0)]);
         assert_eq!(name_over_bass(10, &thin), None);
+    }
+
+    // with no bass the chord is named from the notes alone, and two notes a tone apart make none
+    #[test]
+    fn names_chords_without_bass() {
+        let a_minor = shares(&[(9, 40.0), (0, 30.0), (4, 30.0)]);
+        assert_eq!(name_alone(&a_minor).as_deref(), Some("Am"));
+        let e_flat = shares(&[(3, 35.0), (7, 30.0), (10, 20.0), (2, 15.0)]);
+        assert_eq!(name_alone(&e_flat).as_deref(), Some("Ebmaj7"));
+        let cluster = shares(&[(2, 50.0), (4, 50.0)]);
+        assert_eq!(name_alone(&cluster), None);
+    }
+
+    // a stray short low note is not taken as the bass, a held one is
+    #[test]
+    fn ignores_stray_bass_notes() {
+        let note = |start: u32, length: u32, key: u8| Note {
+            start,
+            length,
+            key,
+            velocity: 80,
+            part: Part::Bass,
+        };
+        let stray = [note(10 * STEP, 2 * STEP, 46)];
+        assert_eq!(bass_root(&stray, 0, BAR), None);
+        let held = [note(0, 15 * STEP, 24)];
+        assert_eq!(bass_root(&held, 0, BAR), Some(0));
     }
 }
