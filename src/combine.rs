@@ -1,11 +1,12 @@
 use crate::compose::{
-    self, ChannelSpec, ClipSpec, CopySpec, Loop, MarkerSpec, PatternCopy, PatternSpec,
+    self, AudioClipSpec, ChannelSpec, ClipSpec, CopySpec, Loop, MarkerSpec, PatternCopy,
+    PatternSpec,
 };
 use crate::flp::channels::{self, Block};
 use crate::flp::events::{self, Event, Project};
 use crate::flp::info;
 use crate::flp::mixer;
-use crate::flp::timeline::{self, Clip, ClipSource};
+use crate::flp::timeline::{self, Clip, ClipSource, Track};
 use crate::music::{BAR, PPQ};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -172,16 +173,30 @@ pub fn expand(spec: &Loop, out: &Path) -> Result<(Loop, Vec<String>), String> {
     if tracks.len() < busy {
         tracks.resize(busy, String::new());
     }
-    let mut heard: HashMap<usize, bool> = HashMap::new();
-    let mut sounds: Vec<SectionChannel> = Vec::new();
-    let mut lines: Vec<SectionPattern> = Vec::new();
-
+    let mut sections = Vec::new();
     for section in &spec.sections {
         let path = compose::project_path(&section.project, out);
         let project = events::read(&path)
             .map_err(|e| format!("can't read section {}: {}", section.name, e))?;
-        let source = path.display().to_string();
-        let summary = info::summarize(&project);
+        sections.push((section, path.display().to_string(), project));
+    }
+    let mut playing_somewhere: Vec<String> = Vec::new();
+    for (_, _, project) in &sections {
+        let summary = info::summarize(project);
+        let their_tracks = timeline::tracks(project);
+        for clip in timeline::clips(project) {
+            let (name, on) = track_name(&their_tracks, &clip, &summary);
+            if on && !playing_somewhere.contains(&name) {
+                playing_somewhere.push(name);
+            }
+        }
+    }
+    let mut muted_tracks: Vec<usize> = Vec::new();
+    let mut sounds: Vec<SectionChannel> = Vec::new();
+    let mut lines: Vec<SectionPattern> = Vec::new();
+
+    for (section, source, project) in &sections {
+        let summary = info::summarize(project);
         if let Some(bpm) = summary.tempo {
             if (bpm - spec.tempo).abs() > 0.01 {
                 warnings.push(format!(
@@ -191,26 +206,34 @@ pub fn expand(spec: &Loop, out: &Path) -> Result<(Loop, Vec<String>), String> {
             }
         }
         let scale = |tick: u32| (tick as u64 * PPQ as u64 / project.ppq.max(1) as u64) as u32;
-        let all = timeline::clips(&project);
+        let their_tracks = timeline::tracks(project);
+        let blocks = channels::blocks(project);
+        let all = timeline::clips(project);
         let mut clips: Vec<Clip> = all
             .iter()
             .filter(|c| matches!(c.source, ClipSource::Pattern(_)))
             .copied()
             .collect();
         clips.sort_by_key(|c| (c.start, c.track));
-        let left_out = all
-            .iter()
-            .filter(|c| match c.source {
-                ClipSource::Channel(id) => !summary
-                    .channels
-                    .iter()
-                    .any(|ch| ch.id == id && ch.name.to_lowercase().ends_with("stem")),
-                ClipSource::Pattern(_) => false,
-            })
-            .count();
+        let mut sounding: Vec<Clip> = Vec::new();
+        let mut left_out = 0;
+        for clip in &all {
+            let ClipSource::Channel(id) = clip.source else {
+                continue;
+            };
+            let (_, on) = track_name(&their_tracks, clip, &summary);
+            let is_audio = blocks
+                .iter()
+                .any(|b| b.id == id && b.kind == channels::AUDIO_CLIP);
+            match (on, is_audio) {
+                (true, true) => sounding.push(*clip),
+                (true, false) => left_out += 1,
+                (false, _) => {}
+            }
+        }
         if left_out > 0 {
             warnings.push(format!(
-                "section {} has {} audio or automation clips, which were left out",
+                "section {} has {} automation clips, which were left out",
                 section.name, left_out
             ));
         }
@@ -232,7 +255,7 @@ pub fn expand(spec: &Loop, out: &Path) -> Result<(Loop, Vec<String>), String> {
             return Err(format!("section {} is 0 bars long", section.name));
         }
 
-        let notes = timeline::pattern_notes(&project);
+        let notes = timeline::pattern_notes(project);
         let mut used: Vec<u16> = Vec::new();
         for clip in &clips {
             if let ClipSource::Pattern(id) = clip.source {
@@ -244,11 +267,15 @@ pub fn expand(spec: &Loop, out: &Path) -> Result<(Loop, Vec<String>), String> {
         let playing: Vec<u16> = used
             .iter()
             .flat_map(|id| notes.get(id).into_iter().flatten().map(|n| n.channel))
+            .chain(sounding.iter().filter_map(|c| match c.source {
+                ClipSource::Channel(id) => Some(id),
+                ClipSource::Pattern(_) => None,
+            }))
             .collect();
 
         let mut channel_names: HashMap<u16, String> = HashMap::new();
         let mut their_names: HashMap<u16, String> = HashMap::new();
-        for block in channels::blocks(&project) {
+        for block in &blocks {
             if !playing.contains(&block.id) {
                 continue;
             }
@@ -257,7 +284,7 @@ pub fn expand(spec: &Loop, out: &Path) -> Result<(Loop, Vec<String>), String> {
                 channel_names.insert(block.id, block.name.clone());
                 continue;
             }
-            let sound = sound_of(&project, &block);
+            let sound = sound_of(project, block);
             if let Some(same) = sounds
                 .iter()
                 .find(|s| s.base == block.name && s.sound == sound)
@@ -271,8 +298,13 @@ pub fn expand(spec: &Loop, out: &Path) -> Result<(Loop, Vec<String>), String> {
                 .map(|c| c.name.clone())
                 .chain(sounds.iter().map(|s| s.name.clone()))
                 .collect();
-            let name = unique_name(&block.name, &section.name, &taken);
-            if name != block.name {
+            let wanted = if block.kind == channels::AUDIO_CLIP && is_stem(&block.name) {
+                format!("{} ({})", block.name, section.name)
+            } else {
+                block.name.clone()
+            };
+            let name = unique_name(&wanted, &section.name, &taken);
+            if name != wanted {
                 warnings.push(format!(
                     "{} in section {} sounds different from the {} before it, so it was kept as {}",
                     block.name, section.name, block.name, name
@@ -365,22 +397,19 @@ pub fn expand(spec: &Loop, out: &Path) -> Result<(Loop, Vec<String>), String> {
             });
         }
 
-        let their_tracks = timeline::tracks(&project);
         let mut track_numbers: HashMap<u16, u16> = HashMap::new();
-        for clip in &clips {
+        for clip in clips.iter().chain(&sounding) {
             if track_numbers.contains_key(&clip.track) {
                 continue;
             }
-            let found = their_tracks
-                .iter()
-                .find(|t| t.number == clip.track as u32 + 1);
-            let name = found
-                .and_then(|t| t.name.clone())
-                .or_else(|| match clip.source {
-                    ClipSource::Pattern(id) => pattern_names.get(&id).cloned(),
-                    ClipSource::Channel(_) => None,
-                })
-                .unwrap_or_else(|| format!("Track {}", clip.track + 1));
+            let (name, on) = track_name(&their_tracks, clip, &summary);
+            let name = if matches!(clip.source, ClipSource::Channel(_)) && is_stem(&name) {
+                format!("{} ({})", name, section.name)
+            } else if !on && playing_somewhere.contains(&name) {
+                format!("{} (muted)", name)
+            } else {
+                name
+            };
             let index = match tracks.iter().position(|t| *t == name) {
                 Some(index) => index,
                 None => {
@@ -388,7 +417,9 @@ pub fn expand(spec: &Loop, out: &Path) -> Result<(Loop, Vec<String>), String> {
                     tracks.len() - 1
                 }
             };
-            *heard.entry(index).or_insert(false) |= found.is_none_or(|t| t.enabled);
+            if !on && !muted_tracks.contains(&index) {
+                muted_tracks.push(index);
+            }
             track_numbers.insert(clip.track, index as u16 + 1);
         }
 
@@ -480,6 +511,24 @@ pub fn expand(spec: &Loop, out: &Path) -> Result<(Loop, Vec<String>), String> {
                     p.cut,
                 ));
             }
+            for clip in &sounding {
+                let ClipSource::Channel(id) = clip.source else {
+                    continue;
+                };
+                for r in 0..repeats {
+                    let position = r * loop_length + scale(clip.start);
+                    if position >= length {
+                        continue;
+                    }
+                    let bars = scale(clip.length).min(length - position) as f64 / BAR as f64;
+                    song.audio_clips.push(AudioClipSpec {
+                        channel: channel_names[&id].clone(),
+                        track: track_numbers[&clip.track],
+                        bar: at + position as f64 / BAR as f64,
+                        bars,
+                    });
+                }
+            }
             song.markers.push(MarkerSpec {
                 bar: at,
                 name: section.name.clone(),
@@ -494,13 +543,9 @@ pub fn expand(spec: &Loop, out: &Path) -> Result<(Loop, Vec<String>), String> {
         }
     }
 
-    let mut silent: Vec<u16> = heard
-        .into_iter()
-        .filter(|&(_, on)| !on)
-        .map(|(index, _)| index as u16 + 1)
-        .collect();
-    silent.sort();
-    for number in silent {
+    muted_tracks.sort();
+    for index in muted_tracks {
+        let number = index as u16 + 1;
         if !song.mute.contains(&number) {
             song.mute.push(number);
         }
@@ -508,6 +553,32 @@ pub fn expand(spec: &Loop, out: &Path) -> Result<(Loop, Vec<String>), String> {
     song.markers.sort_by(|a, b| a.bar.total_cmp(&b.bar));
     song.tracks = tracks;
     Ok((song, warnings))
+}
+
+// whether a name is one of the song's stems, like Drums stem
+fn is_stem(name: &str) -> bool {
+    name.to_lowercase().ends_with("stem")
+}
+
+// a section clip's track name, its own or else the name of what it plays, and whether that track is switched on
+fn track_name(tracks: &[Track], clip: &Clip, summary: &info::Summary) -> (String, bool) {
+    let found = tracks.iter().find(|t| t.number == clip.track as u32 + 1);
+    let name = found
+        .and_then(|t| t.name.clone())
+        .or_else(|| match clip.source {
+            ClipSource::Pattern(id) => summary
+                .patterns
+                .iter()
+                .find(|p| p.id == id)
+                .map(|p| p.name.clone()),
+            ClipSource::Channel(id) => summary
+                .channels
+                .iter()
+                .find(|c| c.id == id)
+                .map(|c| c.name.clone()),
+        })
+        .unwrap_or_else(|| format!("Track {}", clip.track + 1));
+    (name, found.is_none_or(|t| t.enabled))
 }
 
 // one clip of a section placed in the song, with its length and where it starts inside its pattern in ticks
@@ -683,5 +754,54 @@ mod tests {
         assert_eq!(velocities, vec![64]);
         let markers: Vec<&str> = expanded.markers.iter().map(|m| m.name.as_str()).collect();
         assert_eq!(markers, vec!["Intro", "Drop"]);
+    }
+
+    // a track muted in one section but playing in another keeps its muted clips on a muted track of their own
+    #[test]
+    fn keeps_muted_section_tracks_muted() {
+        let dir = std::env::temp_dir().join("unbake_combine_mute_test");
+        let section = |name: &str, mute: &str| {
+            format!(
+                r#"{{
+                    "name": "{}", "tempo": 140, "bars": 1,
+                    "channels": [ {{ "name": "Kick", "sample": "C:/kick.wav" }}, {{ "name": "Hat", "sample": "C:/hat.wav" }} ],
+                    "patterns": [
+                        {{ "name": "Kick", "grids": [ {{ "channel": "Kick", "hits": "x...x...x...x..." }} ] }},
+                        {{ "name": "Hat", "grids": [ {{ "channel": "Hat", "hits": "..x...x...x...x." }} ] }}
+                    ],
+                    "tracks": ["Kick", "Hat"],
+                    "mute": [{}]
+                }}"#,
+                name, mute
+            )
+        };
+        loop_project(&dir, &section("quiet", "1"));
+        loop_project(&dir, &section("loud", ""));
+        let song: Loop = serde_json::from_str(
+            r#"{
+                "name": "mute song", "tempo": 140,
+                "sections": [
+                    { "name": "Loud", "project": "loud.flp", "at": [2] },
+                    { "name": "Quiet", "project": "quiet.flp", "at": [1] }
+                ]
+            }"#,
+        )
+        .unwrap();
+        let (expanded, _) = expand(&song, &dir).unwrap();
+        assert_eq!(expanded.tracks, vec!["Kick", "Hat", "Kick (muted)"]);
+        assert_eq!(expanded.mute, vec![3]);
+        let on = |track: u16| {
+            let mut bars: Vec<f64> = expanded
+                .playlist
+                .iter()
+                .filter(|c| c.track == track)
+                .map(|c| c.bar)
+                .collect();
+            bars.sort_by(f64::total_cmp);
+            bars
+        };
+        assert_eq!(on(1), vec![2.0]);
+        assert_eq!(on(2), vec![1.0, 2.0]);
+        assert_eq!(on(3), vec![1.0]);
     }
 }

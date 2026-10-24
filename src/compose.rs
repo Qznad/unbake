@@ -44,6 +44,18 @@ pub struct Loop {
     pub mute: Vec<u16>,
     #[serde(default)]
     pub sections: Vec<SectionSpec>,
+    #[serde(default)]
+    pub audio_clips: Vec<AudioClipSpec>,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct AudioClipSpec {
+    pub channel: String,
+    pub track: u16,
+    #[serde(default = "one")]
+    pub bar: f64,
+    pub bars: f64,
 }
 
 #[derive(Deserialize, Clone)]
@@ -502,6 +514,32 @@ pub fn write(spec: &Loop, out: &Path, template: Option<&Path>) -> Result<Written
     }
     let mut audio = Vec::new();
     let mut muted: Vec<u16> = spec.mute.iter().map(|t| t.max(&1) - 1).collect();
+    for clip in &spec.audio_clips {
+        let channel = channel_index(&clip.channel)?;
+        let is_audio = matches!(
+            &new_channels[channel].source,
+            ChannelSource::Copy { block, .. } if block.kind == channels::AUDIO_CLIP
+        );
+        if !is_audio {
+            return Err(format!(
+                "{} is not an audio clip channel, so it can't be placed as an audio clip; copy one from a project's audio clip",
+                clip.channel
+            ));
+        }
+        let track = clip.track.max(1) - 1;
+        audio.push(NewAudioClip {
+            channel,
+            start: tick(clip.bar, 1.0),
+            seconds: clip.bars * 4.0 * 60.0 / spec.tempo,
+            track,
+        });
+        if track_names.len() <= track as usize {
+            track_names.resize(track as usize + 1, String::new());
+        }
+        if track_names[track as usize].is_empty() {
+            track_names[track as usize] = clip.channel.clone();
+        }
+    }
     if let Some(stems) = &spec.stems {
         let first_track = track_names.len() as u16 + 1;
         for (n, (name, path, seconds)) in cut_stems(spec, stems, out, &mut warnings)?
