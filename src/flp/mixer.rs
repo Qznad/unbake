@@ -27,29 +27,43 @@ fn inserts(project: &Project) -> Vec<Insert> {
     out
 }
 
+// points every effect in some slot events at one insert, since fl studio places each effect on the insert its plugin data names
+fn move_to(slots: &mut [Event], insert: usize) {
+    for event in slots.iter_mut().filter(|e| e.id == events::PLUGIN_DATA) {
+        if let Value::Data(data) = &mut event.value {
+            if data.len() >= 4 {
+                data[..4].copy_from_slice(&(insert as i32).to_le_bytes());
+            }
+        }
+    }
+}
+
 // replaces the effect slots of one insert with a copy of another project's insert, plugins and settings included
 pub fn copy_effects(project: &mut Project, target: usize, from: &Project, source: usize) -> bool {
     let theirs = inserts(from);
     let ours = inserts(project);
-    let (Some(source), Some(target)) = (theirs.get(source), ours.get(target)) else {
+    let (Some(source), Some(found)) = (theirs.get(source), ours.get(target)) else {
         return false;
     };
-    if source.slots_end <= source.flags + 1 || target.slots_end <= target.flags + 1 {
+    if source.slots_end <= source.flags + 1 || found.slots_end <= found.flags + 1 {
         return false;
     }
-    let slots: Vec<Event> = from.events[source.flags + 1..source.slots_end].to_vec();
+    let mut slots: Vec<Event> = from.events[source.flags + 1..source.slots_end].to_vec();
+    move_to(&mut slots, target);
     project
         .events
-        .splice(target.flags + 1..target.slots_end, slots);
+        .splice(found.flags + 1..found.slots_end, slots);
     true
 }
 
-// the effect slot events of one insert, plugins and settings, empty when the insert is not found
+// the effect slot events of one insert without its number, so one chain on two inserts compares equal, empty when the insert is not found
 pub fn effects(project: &Project, insert: usize) -> Vec<Event> {
-    match inserts(project).get(insert) {
+    let mut slots = match inserts(project).get(insert) {
         Some(found) => project.events[found.flags + 1..found.slots_end].to_vec(),
         None => Vec::new(),
-    }
+    };
+    move_to(&mut slots, 0);
+    slots
 }
 
 // the insert a channel of a project is routed to
@@ -103,6 +117,10 @@ mod tests {
                         id: events::PLUGIN_NAME,
                         value: Value::Data(events::encode_text(name)),
                     });
+                    events.push(Event {
+                        id: events::PLUGIN_DATA,
+                        value: Value::Data(vec![2, 0, 0, 0, 0, 0, 0, 0]),
+                    });
                 }
             }
             for slot in 0..10 {
@@ -135,5 +153,15 @@ mod tests {
         assert_eq!(summary.inserts[1].effects, vec!["Fruity Reeverb 2"]);
         assert_eq!(summary.inserts[1].name.as_deref(), Some("Break"));
         assert!(summary.inserts[2].effects.is_empty());
+        let data = project
+            .events
+            .iter()
+            .find_map(|e| match (e.id, &e.value) {
+                (events::PLUGIN_DATA, Value::Data(data)) => Some(data.clone()),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(data[..4], [1, 0, 0, 0]);
+        assert_eq!(effects(&project, 1), effects(&from, 2));
     }
 }
