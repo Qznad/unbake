@@ -86,6 +86,16 @@ pub fn measure(folder: &Path, session: &Session) -> Measures {
 pub fn sounds_like(folder: &Path, from_bar: u32, bars: u32) -> Result<Likeness, String> {
     let session = rebuild::load_session(folder)?;
     let measures = measure(folder, &session);
+    likeness(&measures, &session, from_bar, bars)
+}
+
+// what a stretch sounds like, from measures already taken, so many stretches can be compared without reading the stems again
+pub fn likeness(
+    measures: &Measures,
+    session: &Session,
+    from_bar: u32,
+    bars: u32,
+) -> Result<Likeness, String> {
     let first = from_bar.max(1) as usize - 1;
     let length = (bars.max(1) as usize).min(session.bars as usize);
     if first + length > session.bars as usize {
@@ -103,8 +113,8 @@ pub fn sounds_like(folder: &Path, from_bar: u32, bars: u32) -> Result<Likeness, 
         drums_db: window(&measures.drums_db).map(|v| v.round() as i32),
         other_db: window(&measures.other_db).map(|v| v.round() as i32),
         drums_top_khz: window(&measures.drums_top).map(tenth),
-        chords: matches(&measures.chords, first, length, &measures, &session),
-        drums: matches(&measures.rhythm, first, length, &measures, &session),
+        chords: matches(&measures.chords, first, length, measures, session),
+        drums: matches(&measures.rhythm, first, length, measures, session),
     })
 }
 

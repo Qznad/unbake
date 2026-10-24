@@ -11,8 +11,8 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 const AFTER_TRANSCRIBE: &str = "Stop here and ask the user before building anything, even if they asked for everything in one go. Tell them the tempo, key, bars and sections, then ask: the genre (suggest one from the tempo and drums), the tempo if the tempo finding has a half or double time unknown, and which section the loop should come from (suggest the busiest drop from song_overview). After they answer, propose a reference project and its sounds and ask again. Don't reuse choices from earlier unbake projects you find on disk unless the user points you to them.";
-const AFTER_COMPOSE: &str = "Stop here. Tell the user which .flp to open (in this folder), then ask: can every part be heard, how does it feel overall, and which part is weakest. Wait for their answer. Don't write another version, the next section or the whole song until they say this one works. They may change it in FL and save it: build on their saved .flp (read it with flp_info and playlist), not only on your description.";
-const AFTER_SONG: &str = "Stop here. Tell the user which .flp to open (in this folder), then ask them to listen section by section and say what's wrong where. Fix a section in its own loop project and write it again, then combine the sections again.";
+const AFTER_COMPOSE: &str = "Read check first: a part that doesn't fit is probably copied from other bars or wrong, so fix it before the user listens, and tell the user which weak parts to check by ear. Then stop here. Tell the user which .flp to open (in this folder), then ask: can every part be heard, how does it feel overall, and which part is weakest. Wait for their answer. Don't write another version, the next section or the whole song until they say this one works. They may change it in FL and save it: build on their saved .flp (read it with flp_info and playlist), not only on your description.";
+const AFTER_SONG: &str = "Read check first and fix the sections whose parts don't fit, or tell the user which bars are weak. Then stop here. Tell the user which .flp to open (in this folder), then ask them to listen section by section and say what's wrong where. Fix a section in its own loop project and write it again, then combine the sections again.";
 const SKILL: &str = include_str!("../skills/unbake/SKILL.md");
 
 // answers model context protocol requests, one json message per line on stdin, until stdin closes
@@ -213,6 +213,33 @@ fn tools() -> Value {
             "inputSchema": { "type": "object", "properties": { "folder": folder }, "required": ["folder"] }
         },
         {
+            "name": "song_timeline",
+            "description": "The song stretch by stretch (rows of the chord cycle's length, aligned to its first bar): for drums, bass, chords and lead, whether the stretch repeats an earlier one ('same as bar 9', letters from song_parts with their likeness), is new ('new, letter C, heard 3 times', or 'heard once' when nothing confirms it) or is silent; how clearly unbake hears it ('clear', 'filtered', 'quiet', with what it sounds like when unclear); and the work left: 'done (approved)', 'reuse' when every part repeats one already made, 'build: lead' for new parts unbake heard clearly, 'ask: lead (heard once)' for parts the user should confirm by ear. Call it first when planning a whole song, pass the song bars the user already approved, and plan from it: reuse only what it says is the same, build what it says is new, ask about the rest.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": folder,
+                    "from_bar": { "type": "integer", "description": "the first bar of the chord cycle, default 1" },
+                    "bars": { "type": "integer", "description": "bars per row, the chord cycle's length, default 4" },
+                    "approved": { "type": "array", "items": { "type": "string" }, "description": "song bars the user already approved, like [\"33-40\"]" }
+                },
+                "required": ["folder"]
+            }
+        },
+        {
+            "name": "check_project",
+            "description": "Compare every channel of an FL Studio project with what the song plays in the same bars, 4 bars at a time: pitched channels with the notes heard in the other stem (bass, sub and 808 channels with the bass stem), kick, snare and hat channels with the drum hits heard. Each channel says how many stretches fit and lists the ones that are weak (check by ear) or don't fit (probably copied from other bars or wrong). compose_loop runs it by itself when the description has stems; call this on a project the user edited, or any other. Crashes, breaks and effects aren't checked.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "path to the .flp" },
+                    "folder": folder,
+                    "from_bar": { "type": "number", "description": "the song bar where the project's bar 1 sits, default 1" }
+                },
+                "required": ["file", "folder"]
+            }
+        },
+        {
             "name": "sounds_like",
             "description": "The bars elsewhere in the song that sound most like a stretch, measured straight from the stems and whatever their level: chords compares which note names sound in the other stem (the song's overall key taken out, so 0 is unrelated and 0.6 or more is close), drums compares where the drum hits fall on the 16 steps. Each match gives its first bar, section, likeness and its levels. Intros, breakdowns and builds are often a quieter or filtered copy of a drop, and they transcribe badly (few drum hits, wrong notes from a filter, no bass); use this on them to find the loud bars they come from and build them from those bars' parts. Likeness under about 0.3 means no clear match.",
             "inputSchema": {
@@ -359,6 +386,34 @@ fn call_tool(params: &Value) -> Value {
         "piano_roll" => piano_roll_tool(args),
         "song_overview" => path_arg(args, "folder")
             .and_then(|folder| views::overview(&folder))
+            .and_then(text),
+        "song_timeline" => path_arg(args, "folder")
+            .and_then(|folder| {
+                let approved: Vec<String> = args["approved"]
+                    .as_array()
+                    .map(|list| {
+                        list.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                crate::song_map::timeline(
+                    &folder,
+                    number(args, "from_bar", 1),
+                    number(args, "bars", 4),
+                    &crate::song_map::parse_approved(&approved)?,
+                )
+            })
+            .and_then(text),
+        "check_project" => factory_arg(args, "file")
+            .and_then(|file| flp::events::read(&file))
+            .and_then(|project| {
+                crate::check::check(
+                    &project,
+                    &path_arg(args, "folder")?,
+                    args["from_bar"].as_f64().unwrap_or(1.0),
+                )
+            })
             .and_then(text),
         "sounds_like" => path_arg(args, "folder")
             .and_then(|folder| {
@@ -709,15 +764,16 @@ mod tests {
             answer["next_step"]
                 .as_str()
                 .unwrap()
-                .starts_with("Stop here")
+                .to_lowercase()
+                .contains("stop here")
         );
     }
 
-    // the tool list has twenty-one tools and an unknown tool comes back as an error result
+    // the tool list has twenty-three tools and an unknown tool comes back as an error result
     #[test]
     fn lists_tools() {
         let reply = handle(&json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).unwrap();
-        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 21);
+        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 23);
         let call = handle(&json!({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": { "name": "nope", "arguments": {} }

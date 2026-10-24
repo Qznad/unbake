@@ -55,6 +55,8 @@ pub struct PartLine {
     pub notes: usize,
     pub same_as_first: f64,
     pub closest_other: Option<(String, f64)>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub like_earlier: Option<(u32, f64)>,
 }
 
 #[derive(Serialize)]
@@ -270,6 +272,12 @@ pub fn parts(
                     (letter(g), round(same), closest)
                 }
             };
+            let like_earlier = stretches[..i]
+                .iter()
+                .filter(|(_, earlier)| !earlier.is_empty() && !notes.is_empty())
+                .map(|(earlier_bar, earlier)| (*earlier_bar, likeness(notes, earlier)))
+                .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)))
+                .map(|(b, l)| (b, round(l)));
             PartLine {
                 from_bar: *bar,
                 bars: (length / BAR).min(last + 1 - bar),
@@ -277,6 +285,7 @@ pub fn parts(
                 notes: notes.len(),
                 same_as_first: same,
                 closest_other: closest,
+                like_earlier,
             }
         })
         .collect();

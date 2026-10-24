@@ -8,6 +8,7 @@ mod analysis;
 mod arrange;
 mod audio;
 mod basic_pitch;
+mod check;
 mod combine;
 mod compare;
 mod compose;
@@ -25,6 +26,7 @@ mod piano_roll;
 mod rebuild;
 mod report;
 mod separate;
+mod song_map;
 mod sounds;
 mod synth;
 mod theory;
@@ -109,6 +111,41 @@ enum Command {
         about = "one line per bar of a transcribed folder: its section, kick, snare, hat, bass and other note counts, the chord heard, each stem's level and how high the drums reach"
     )]
     Overview { folder: PathBuf },
+
+    #[command(
+        about = "the song stretch by stretch: whether drums, bass, chords and lead repeat an earlier stretch, are new or silent, how clearly unbake hears them, and the work left"
+    )]
+    Timeline {
+        folder: PathBuf,
+        #[arg(
+            long,
+            default_value_t = 1,
+            help = "the first bar of the chord cycle, counting from 1"
+        )]
+        from_bar: u32,
+        #[arg(
+            long,
+            default_value_t = 4,
+            help = "bars per row, the length of the chord cycle"
+        )]
+        bars: u32,
+        #[arg(long, help = "song bars already approved, like 33-40")]
+        approved: Vec<String>,
+    },
+
+    #[command(
+        about = "compare every channel of an fl studio project with what the song plays in the same bars, and list where a part doesn't fit"
+    )]
+    Check {
+        project: PathBuf,
+        folder: PathBuf,
+        #[arg(
+            long,
+            default_value_t = 1.0,
+            help = "the song bar where the project's bar 1 sits"
+        )]
+        from_bar: f64,
+    },
 
     #[command(
         about = "the bars elsewhere in the song that sound most like a stretch, in chords and in drum rhythm, however quiet or filtered it is"
@@ -402,6 +439,23 @@ fn print_findings(findings: &[evidence::Finding]) {
 }
 
 // runs the program and prints any error
+// prints how each channel fits the song, stretch by stretch, with only the stretches that don't fit spelled out
+fn print_fits(fits: &[check::ChannelFit]) {
+    println!("Check against the song:");
+    for fit in fits {
+        println!(
+            "  {:<14} {} stretches fit, compared with {}",
+            fit.channel, fit.fitting, fit.against
+        );
+        for problem in &fit.problems {
+            println!(
+                "    song bar {:>3} (project bar {:>3})  {:>5.2}  {}",
+                problem.song_bar, problem.project_bar, problem.fit, problem.verdict
+            );
+        }
+    }
+}
+
 fn main() {
     let cli = Cli::parse();
     if let Err(e) = run(cli.command) {
@@ -787,6 +841,44 @@ fn run(command: Command) -> Result<(), String> {
             for warning in &written.warnings {
                 println!("Warning:     {}", warning);
             }
+            if let Some(fits) = &written.check {
+                print_fits(fits);
+            }
+            Ok(())
+        }
+        Command::Timeline {
+            folder,
+            from_bar,
+            bars,
+            approved,
+        } => {
+            let approved = song_map::parse_approved(&approved)?;
+            for row in song_map::timeline(&folder, from_bar, bars, &approved)?.rows {
+                println!(
+                    "bars {}-{}{}  {}  -> {}",
+                    row.from_bar,
+                    row.from_bar + row.bars - 1,
+                    row.section.map(|s| format!(" ({})", s)).unwrap_or_default(),
+                    row.sound,
+                    row.work
+                );
+                println!("    drums:  {}", row.drums);
+                println!("    bass:   {}", row.bass);
+                println!("    chords: {}", row.chords);
+                println!("    lead:   {}", row.lead);
+                if let Some(like) = row.sounds_like {
+                    println!("    sounds like: {}", like);
+                }
+            }
+            Ok(())
+        }
+        Command::Check {
+            project,
+            folder,
+            from_bar,
+        } => {
+            let project = flp::events::read(&compose::local_path(&project.display().to_string()))?;
+            print_fits(&check::check(&project, &folder, from_bar)?);
             Ok(())
         }
         Command::Pattern { file, name } => {

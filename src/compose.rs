@@ -248,6 +248,8 @@ pub struct Written {
     pub patterns: usize,
     pub clips: usize,
     pub warnings: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check: Option<Vec<crate::check::ChannelFit>>,
 }
 
 // eight bars, the default loop length
@@ -581,6 +583,19 @@ pub fn write(spec: &Loop, out: &Path, template: Option<&Path>) -> Result<Written
     std::fs::create_dir_all(out).map_err(|e| format!("can't create {}: {}", out.display(), e))?;
     let path = out.join(format!("{}.flp", file_name(&spec.name)));
     events::write(&path, &project)?;
+    let check = spec.stems.as_ref().and_then(|stems| {
+        let song_bar = stems.from_bar - (stems.at_bar - 1.0);
+        match crate::check::check(&project, &local_path(&stems.folder), song_bar) {
+            Ok(found) => Some(found),
+            Err(e) => {
+                warnings.push(format!(
+                    "the parts could not be checked against the song: {}",
+                    e
+                ));
+                None
+            }
+        }
+    });
     Ok(Written {
         path: path.display().to_string(),
         description: None,
@@ -588,6 +603,7 @@ pub fn write(spec: &Loop, out: &Path, template: Option<&Path>) -> Result<Written
         patterns: built.patterns,
         clips: built.clips,
         warnings,
+        check,
     })
 }
 
