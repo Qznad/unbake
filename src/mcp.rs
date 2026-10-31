@@ -240,6 +240,21 @@ fn tools() -> Value {
             }
         },
         {
+            "name": "compare_render",
+            "description": "Render a project through FL Studio and compare how it sounds with the song's stems for the same bars. With part (drums, bass, other or vocals) it renders only that stem's channels and compares them with that stem; with part all, or none, it renders every part and the whole mix, and also says which parts sit too loud or too quiet in the mix (balance). For each part: issues in plain words (silent bars, hits or notes at other times, other notes, too much or too little of a band, darker or brighter, mono or wide), rhythm and notes likeness (1 is the same, under about 0.5 for rhythm or 0.7 for notes is off), the level, the share of the sound in five bands (sub, lows, low mids, high mids, highs) for yours and the song, brightness (where most of the sound sits, in kHz), stereo width (0 mono) and the same per bar. Levels are absolute and the song is mastered, so compare tone, rhythm, notes and balance rather than raw loudness. FL Studio must be closed. Fix the biggest issue, one change at a time, render again and keep the change only when that issue gets smaller; the user's ears decide what sounds right.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "path to the .flp" },
+                    "folder": folder,
+                    "from_bar": { "type": "integer", "description": "the song bar where the project's bar 1 sits, default 1" },
+                    "part": { "type": "string", "description": "drums, bass, other, vocals or all (the default)" },
+                    "bars": { "type": "integer", "description": "how many bars to compare, the project's length by default" }
+                },
+                "required": ["file", "folder"]
+            }
+        },
+        {
             "name": "check_project",
             "description": "Compare every channel of an FL Studio project with what the song plays in the same bars, 4 bars at a time: pitched channels with the notes heard in the other stem (bass, sub and 808 channels with the bass stem), kick, snare and hat channels with the drum hits heard. Each channel says how many stretches fit and lists the ones that are weak (check by ear) or don't fit (probably copied from other bars or wrong). compose_loop runs it by itself when the description has stems; call this on a project the user edited, or any other. Crashes, breaks and effects aren't checked.",
             "inputSchema": {
@@ -430,6 +445,24 @@ fn call_tool(params: &Value) -> Value {
                 let out = optional_path(args, "out")
                     .unwrap_or_else(|| crate::render::default_folder(&file));
                 crate::render::render(&file, stem, &out, std::time::Duration::from_secs(600))
+            })
+            .and_then(text),
+        "compare_render" => factory_arg(args, "file")
+            .and_then(|file| {
+                let stem = match args["part"].as_str() {
+                    None | Some("all") => None,
+                    Some(p) => Some(
+                        crate::render::Stem::parse(p)
+                            .ok_or(format!("{} is not drums, bass, other, vocals or all", p))?,
+                    ),
+                };
+                crate::compare_render::compare_render(
+                    &file,
+                    &path_arg(args, "folder")?,
+                    number(args, "from_bar", 1),
+                    stem,
+                    args["bars"].as_u64().map(|b| b as u32),
+                )
             })
             .and_then(text),
         "check_project" => factory_arg(args, "file")
@@ -796,11 +829,11 @@ mod tests {
         );
     }
 
-    // the tool list has twenty-four tools and an unknown tool comes back as an error result
+    // the tool list has twenty-five tools and an unknown tool comes back as an error result
     #[test]
     fn lists_tools() {
         let reply = handle(&json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).unwrap();
-        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 24);
+        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 25);
         let call = handle(&json!({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": { "name": "nope", "arguments": {} }

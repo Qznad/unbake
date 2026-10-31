@@ -11,6 +11,7 @@ mod basic_pitch;
 mod check;
 mod combine;
 mod compare;
+mod compare_render;
 mod compose;
 mod doctor;
 mod eval;
@@ -149,6 +150,30 @@ enum Command {
         out: Option<PathBuf>,
         #[arg(long, default_value_t = 600, help = "seconds to wait for fl studio")]
         timeout: u64,
+    },
+
+    #[command(
+        about = "render a project's parts through fl studio and compare how each sounds with the song's stems from a song bar: silence, rhythm, notes, tone, brightness, width and balance"
+    )]
+    CompareRender {
+        project: PathBuf,
+        folder: PathBuf,
+        #[arg(
+            long,
+            default_value_t = 1,
+            help = "the song bar where the project's bar 1 sits"
+        )]
+        from_bar: u32,
+        #[arg(
+            long,
+            help = "drums, bass, other or vocals; every part and the whole mix when left out"
+        )]
+        part: Option<String>,
+        #[arg(
+            long,
+            help = "how many bars to compare, the project's length by default"
+        )]
+        bars: Option<u32>,
     },
 
     #[command(
@@ -457,6 +482,11 @@ fn print_findings(findings: &[evidence::Finding]) {
 }
 
 // runs the program and prints any error
+// a measure for printing, or a dash when there is none
+fn show(value: Option<f64>) -> String {
+    value.map_or("-".to_string(), |v| format!("{:.2}", v))
+}
+
 // prints how each channel fits the song, stretch by stretch, with only the stretches that don't fit spelled out
 fn print_fits(fits: &[check::ChannelFit]) {
     println!("Check against the song:");
@@ -913,6 +943,52 @@ fn run(command: Command) -> Result<(), String> {
             )?;
             println!("Rendered:    {} ({} s)", rendered.wav, rendered.seconds);
             println!("Channels:    {}", rendered.channels.join(", "));
+            Ok(())
+        }
+        Command::CompareRender {
+            project,
+            folder,
+            from_bar,
+            part,
+            bars,
+        } => {
+            let stem = match part.as_deref() {
+                None | Some("all") => None,
+                Some(p) => Some(
+                    render::Stem::parse(p)
+                        .ok_or(format!("{} is not drums, bass, other, vocals or all", p))?,
+                ),
+            };
+            let project = compose::local_path(&project.display().to_string());
+            let found = compare_render::compare_render(&project, &folder, from_bar, stem, bars)?;
+            println!("Song bars {}", found.song_bars);
+            for note in &found.balance {
+                println!("Balance:     {}", note);
+            }
+            for part in &found.parts {
+                println!();
+                println!(
+                    "{} (rhythm {}, notes {}, level {} dB against {} dB, brightness {} kHz against {}, width {} against {})",
+                    part.part,
+                    show(part.rhythm),
+                    show(part.notes),
+                    show(part.yours_db),
+                    show(part.song_db),
+                    show(part.brightness_khz[0]),
+                    show(part.brightness_khz[1]),
+                    show(part.width[0]),
+                    show(part.width[1])
+                );
+                let bands: Vec<String> = part
+                    .bands
+                    .iter()
+                    .map(|b| format!("{} {}% / {}%", b.band, b.yours, b.song))
+                    .collect();
+                println!("  bands, yours / song: {}", bands.join(", "));
+                for issue in &part.issues {
+                    println!("  - {}", issue);
+                }
+            }
             Ok(())
         }
         Command::Check {

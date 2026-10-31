@@ -125,7 +125,7 @@ fn stem(folder: &Path, name: &str) -> Option<Signal> {
 }
 
 // the first and last sample of a 0 based bar
-fn bar_samples(signal: &Signal, grid: &Grid, bar: usize) -> (usize, usize) {
+pub(crate) fn bar_samples(signal: &Signal, grid: &Grid, bar: usize) -> (usize, usize) {
     let rate = signal.sample_rate as f64;
     let start = grid.origin + bar as f64 * grid.bar_seconds();
     let from = ((start * rate).max(0.0) as usize).min(signal.samples.len());
@@ -134,7 +134,7 @@ fn bar_samples(signal: &Signal, grid: &Grid, bar: usize) -> (usize, usize) {
 }
 
 // the loudness of every bar in decibels, missing when the bar is silent
-fn levels(signal: &Signal, grid: &Grid, bars: usize) -> Vec<Option<f64>> {
+pub(crate) fn levels(signal: &Signal, grid: &Grid, bars: usize) -> Vec<Option<f64>> {
     (0..bars)
         .map(|bar| {
             let (from, to) = bar_samples(signal, grid, bar);
@@ -164,7 +164,7 @@ fn relative(levels: &[Option<f64>]) -> Vec<Option<f64>> {
 }
 
 // the frequency in kilohertz below which most of each bar's energy sits, low when a filter cuts the highs
-fn tops(signal: &Signal, grid: &Grid, level: &[Option<f64>]) -> Vec<Option<f64>> {
+pub(crate) fn tops(signal: &Signal, grid: &Grid, level: &[Option<f64>]) -> Vec<Option<f64>> {
     let spectrum = Spectrogram::new(signal, 2048, 2048);
     let rate = spectrum.frame_rate();
     (0..level.len())
@@ -197,7 +197,11 @@ fn tops(signal: &Signal, grid: &Grid, level: &[Option<f64>]) -> Vec<Option<f64>>
 }
 
 // how strongly each note name sounds in every bar that is not silent, from the frames that lie wholly inside the bar so a loud neighbour doesn't leak in
-fn colours(signal: &Signal, grid: &Grid, level: &[Option<f64>]) -> Vec<Option<Vec<f64>>> {
+pub(crate) fn colours(
+    signal: &Signal,
+    grid: &Grid,
+    level: &[Option<f64>],
+) -> Vec<Option<Vec<f64>>> {
     let low = signal.downsample(4);
     let spectrum = Spectrogram::new(&low, 2048, 512);
     let frames = chroma::chromagram(&spectrum);
@@ -222,7 +226,11 @@ fn colours(signal: &Signal, grid: &Grid, level: &[Option<f64>]) -> Vec<Option<Ve
 }
 
 // how sharply the stem hits on each 16th step of every bar that is not silent
-fn rhythms(signal: &Signal, grid: &Grid, level: &[Option<f64>]) -> Vec<Option<Vec<f64>>> {
+pub(crate) fn rhythms(
+    signal: &Signal,
+    grid: &Grid,
+    level: &[Option<f64>],
+) -> Vec<Option<Vec<f64>>> {
     let window = 1024;
     let hop = 256;
     let samples = &signal.samples;
@@ -258,7 +266,7 @@ fn rhythms(signal: &Signal, grid: &Grid, level: &[Option<f64>]) -> Vec<Option<Ve
 }
 
 // a list of numbers scaled to length 1, or nothing when they are all zero
-fn unit(values: Vec<f64>) -> Option<Vec<f64>> {
+pub(crate) fn unit(values: Vec<f64>) -> Option<Vec<f64>> {
     let norm = values.iter().map(|v| v * v).sum::<f64>().sqrt();
     (norm > 1e-9).then(|| values.iter().map(|v| v / norm).collect())
 }
@@ -335,7 +343,7 @@ fn matches(
 }
 
 // the average of the values that are there
-fn mean(values: &[Option<f64>]) -> Option<f64> {
+pub(crate) fn mean(values: &[Option<f64>]) -> Option<f64> {
     let heard: Vec<f64> = values.iter().flatten().copied().collect();
     (!heard.is_empty()).then(|| heard.iter().sum::<f64>() / heard.len() as f64)
 }
