@@ -105,6 +105,7 @@ pub fn build(
     let scale = |tick: u32| (tick as u64 * ppq / PPQ as u64) as u32;
 
     set_tempo(&mut project, bpm);
+    set_song_mode(&mut project);
     if let Some(folder) = &extras.data_folder {
         set_data_folder(&mut project, folder);
     }
@@ -214,6 +215,7 @@ pub fn compose(
     let ppq = template.ppq as u64;
     let scale = |tick: u32| (tick as u64 * ppq / PPQ as u64) as u32;
     set_tempo(&mut project, bpm);
+    set_song_mode(&mut project);
 
     let blocks = channels::blocks(&project);
     let model = blocks
@@ -530,6 +532,25 @@ fn set_tempo(project: &mut Project, bpm: f64) {
                 at,
                 vec![Event {
                     id: events::TEMPO,
+                    value,
+                }],
+            );
+        }
+    }
+}
+
+// switches the project to song mode, so play and a command line render go through the whole playlist instead of one pattern
+fn set_song_mode(project: &mut Project) {
+    let value = Value::Byte(1);
+    match project.find(events::SONG_MODE) {
+        Some(i) => project.events[i].value = value,
+        None => {
+            let at = project.find(events::TEMPO).map(|i| i + 1).unwrap_or(0);
+            insert_events(
+                project,
+                at,
+                vec![Event {
+                    id: events::SONG_MODE,
                     value,
                 }],
             );

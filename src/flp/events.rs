@@ -1,6 +1,7 @@
 use crate::audio::wav::{read_u16_le, read_u32_le};
 use std::path::Path;
 
+pub const SONG_MODE: u8 = 9;
 pub const PING_PONG: u8 = 20;
 pub const CHANNEL_TYPE: u8 = 21;
 pub const CHANNEL_INSERT: u8 = 22;

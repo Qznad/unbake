@@ -1133,6 +1133,8 @@ mod tests {
         assert_eq!(summary.channels[1].name, "Bass");
         assert_eq!(summary.tempo, Some(170.0));
         assert_eq!(summary.patterns[0].notes, 4);
+        let mode = project.find(events::SONG_MODE).unwrap();
+        assert_eq!(project.events[mode].value, events::Value::Byte(1));
     }
 
     // a misspelled or unknown setting is refused with its name instead of being ignored
