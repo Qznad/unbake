@@ -227,6 +227,19 @@ fn tools() -> Value {
             }
         },
         {
+            "name": "render_project",
+            "description": "Render an FL Studio project to a WAV through FL Studio's own command line, the whole project or only one stem's channels (part drums, bass, other or vocals, judged by channel names: kick, snare, hat, crash, break and the like are drums, bass, sub and 808 are bass, vocal and vox are vocals, everything else is other). The solo copy and its WAV go to a renders folder next to the project. FL Studio must be closed while it renders (it opens, renders and closes by itself, about 10 s for a loop), and every sample must exist or it would stop on a dialog. Use it to hear back what a project really sounds like, then compare_render it with the song.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "path to the .flp" },
+                    "part": { "type": "string", "description": "drums, bass, other or vocals; the whole project when left out" },
+                    "out": { "type": "string", "description": "the folder for the render, a renders folder next to the project by default" }
+                },
+                "required": ["file"]
+            }
+        },
+        {
             "name": "check_project",
             "description": "Compare every channel of an FL Studio project with what the song plays in the same bars, 4 bars at a time: pitched channels with the notes heard in the other stem (bass, sub and 808 channels with the bass stem), kick, snare and hat channels with the drum hits heard. Each channel says how many stretches fit and lists the ones that are weak (check by ear) or don't fit (probably copied from other bars or wrong). compose_loop runs it by itself when the description has stems; call this on a project the user edited, or any other. Crashes, breaks and effects aren't checked.",
             "inputSchema": {
@@ -403,6 +416,20 @@ fn call_tool(params: &Value) -> Value {
                     number(args, "bars", 4),
                     &crate::song_map::parse_approved(&approved)?,
                 )
+            })
+            .and_then(text),
+        "render_project" => factory_arg(args, "file")
+            .and_then(|file| {
+                let stem = match args["part"].as_str() {
+                    Some(p) => Some(
+                        crate::render::Stem::parse(p)
+                            .ok_or(format!("{} is not drums, bass, other or vocals", p))?,
+                    ),
+                    None => None,
+                };
+                let out = optional_path(args, "out")
+                    .unwrap_or_else(|| crate::render::default_folder(&file));
+                crate::render::render(&file, stem, &out, std::time::Duration::from_secs(600))
             })
             .and_then(text),
         "check_project" => factory_arg(args, "file")
@@ -769,11 +796,11 @@ mod tests {
         );
     }
 
-    // the tool list has twenty-three tools and an unknown tool comes back as an error result
+    // the tool list has twenty-four tools and an unknown tool comes back as an error result
     #[test]
     fn lists_tools() {
         let reply = handle(&json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).unwrap();
-        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 23);
+        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 24);
         let call = handle(&json!({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": { "name": "nope", "arguments": {} }

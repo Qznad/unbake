@@ -24,6 +24,7 @@ mod midi;
 mod music;
 mod piano_roll;
 mod rebuild;
+mod render;
 mod report;
 mod separate;
 mod song_map;
@@ -131,6 +132,23 @@ enum Command {
         bars: u32,
         #[arg(long, help = "song bars already approved, like 33-40")]
         approved: Vec<String>,
+    },
+
+    #[command(
+        about = "render an fl studio project to a wav through fl studio's command line, the whole project or only one stem's channels (fl studio must be closed)"
+    )]
+    Render {
+        project: PathBuf,
+        #[arg(long, help = "only this stem's channels: drums, bass, other or vocals")]
+        part: Option<String>,
+        #[arg(
+            short,
+            long,
+            help = "the folder for the render, by default renders next to the project"
+        )]
+        out: Option<PathBuf>,
+        #[arg(long, default_value_t = 600, help = "seconds to wait for fl studio")]
+        timeout: u64,
     },
 
     #[command(
@@ -870,6 +888,31 @@ fn run(command: Command) -> Result<(), String> {
                     println!("    sounds like: {}", like);
                 }
             }
+            Ok(())
+        }
+        Command::Render {
+            project,
+            part,
+            out,
+            timeout,
+        } => {
+            let stem = part
+                .as_deref()
+                .map(|p| {
+                    render::Stem::parse(p)
+                        .ok_or(format!("{} is not drums, bass, other or vocals", p))
+                })
+                .transpose()?;
+            let project = compose::local_path(&project.display().to_string());
+            let out = out.unwrap_or_else(|| render::default_folder(&project));
+            let rendered = render::render(
+                &project,
+                stem,
+                &out,
+                std::time::Duration::from_secs(timeout),
+            )?;
+            println!("Rendered:    {} ({} s)", rendered.wav, rendered.seconds);
+            println!("Channels:    {}", rendered.channels.join(", "));
             Ok(())
         }
         Command::Check {
