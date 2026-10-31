@@ -13,16 +13,33 @@ Every result carries **findings**: a value, a confidence, alternatives that came
 
 Don't decide silently when there are choices: the genre, the melody, the reference sounds. Show what differs, give your recommendation and why in plain words, then let them pick. The users already use FL Studio and want to understand how a song is built, so explain the music (why this chord, why the hats double here) more than the software.
 
+## Pace
+
+There are two paces. **Guided** is the default, and the stop points below hold. **Autonomous** only applies when the user asks for it in so many words ("work on your own", "from scratch without stopping me", "autonomous"); asking for the whole song in one go is not enough. In the autonomous pace:
+
+- Ask once, at the start only: FL Studio must stay closed for the whole run, since every check renders through it, and it can take a while.
+- Make every choice a stop point would ask (genre, tempo, reference and sounds, the loop's section, the section plan, the timeline's "ask" parts) yourself, from the evidence, taking the safer guess when unsure. Write each one down with its reason and how sure you are.
+- Use compare_render as your ears where the user's would be. After every `compose_loop`, run it with part `all`, then fix the biggest issue part by part (drums, bass, other, then balance), one change per render, keeping a change only when that issue shrank. Stop on a part after 2 renders in a row without improvement, or 5 renders in all.
+- Follow path A in the same order: the main loop, the section plan from `song_timeline`, one loop per distinct section, the combined song, then `compare_render` on the whole song from bar 1, fixed the same way.
+- Say in one line what you're doing at each step, so the user can follow along.
+- Stop once, at the end, and report:
+  - which .flp to open
+  - every choice you made, with its reason and how sure you were
+  - what got closer and what didn't: the first and the last compare_render numbers per part
+  - the "ask" parts the user should check by ear
+
+  They can redo any choice in the guided pace.
+
 ## Stop points
 
-These are rules, not suggestions. Stop and wait for the user's answer at each one, even when they asked for everything in one go ("make a loop, then the whole song"): that asks for the whole journey, not for skipping their choices.
+In the guided pace these are rules, not suggestions. Stop and wait for the user's answer at each one, even when they asked for everything in one go ("make a loop, then the whole song"): that asks for the whole journey, not for skipping their choices.
 
 1. **After transcribing, before building anything:** tell them what was found, then ask the genre (with your suggestion), the tempo when the tempo finding has a half or double time unknown, the reference project and sounds you propose, and which section the loop comes from (with your suggestion from `song_overview`).
 2. **After writing each loop,** the main one and every section loop, and after hearing it back with `compare_render` (step 5 of path A): tell them which file to open and ask the three listening questions (step 6). Don't write another version, the next section or the whole song until they say it works.
 3. **Before the section loops:** show the section plan made from `song_timeline` (the sections with their bars, and for each part what it reuses, builds or needs the user to confirm, with the evidence) and wait for an OK. Ask the user about every "ask" part here.
 4. **After combining the whole song:** ask them to listen and say what's wrong, section by section.
 
-Build from this song's facts and FL's references. Projects you find on disk from earlier unbake runs are not this user's choices: don't reuse their sounds or structure unless the user points you to them.
+Build from this song's facts and FL's references. Projects you find on disk from earlier unbake runs are not this user's choices: don't reuse their sounds or structure unless the user points you to them. Never edit unbake's own code or files: when a tool seems wrong, tell the user what you saw.
 
 ## First steps
 
