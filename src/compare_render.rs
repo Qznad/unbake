@@ -31,6 +31,7 @@ const BRIGHTER: f64 = 1.6;
 const WIDE: f64 = 0.15;
 const NARROW: f64 = 0.05;
 const BALANCE_DB: f64 = 3.0;
+const SPACE_DB: f64 = 6.0;
 const RENDER_TIMEOUT: u64 = 600;
 
 type Levels = Vec<Option<f64>>;
@@ -67,6 +68,7 @@ pub struct PartComparison {
     pub song_db: Option<f64>,
     pub brightness_khz: [Option<f64>; 2],
     pub width: [Option<f64>; 2],
+    pub space_db: [Option<f64>; 2],
     pub bands: Vec<Band>,
     pub bars: Vec<BarLine>,
 }
@@ -85,6 +87,7 @@ struct Heard {
     rhythms: Vec<Option<Vec<f64>>>,
     bands: Vec<Option<[f64; 5]>>,
     widths: Vec<Option<f64>>,
+    spaces: Vec<Option<f64>>,
 }
 
 // renders a project, one stem of it or each stem and the whole mix, and compares how it sounds with the song's stems from a song bar on
@@ -206,7 +209,8 @@ fn hear(wav: &Wav, grid: &Grid, first: usize, bars: usize) -> Heard {
     let colours = listen::colours(&signal, grid, &level)[first..].to_vec();
     let rhythms = listen::rhythms(&signal, grid, &level)[first..].to_vec();
     let bands = band_shares(&signal, grid, &level)[first..].to_vec();
-    let widths = widths(wav, grid, &level)[first..].to_vec();
+    let widths = listen::widths(wav, grid, &level)[first..].to_vec();
+    let spaces = listen::spaces(&signal, grid, &level)[first..].to_vec();
     Heard {
         level: slice(level),
         tops: slice(tops),
@@ -214,6 +218,7 @@ fn hear(wav: &Wav, grid: &Grid, first: usize, bars: usize) -> Heard {
         rhythms,
         bands,
         widths,
+        spaces,
     }
 }
 
@@ -241,32 +246,6 @@ fn band_shares(signal: &Signal, grid: &Grid, level: &[Option<f64>]) -> Vec<Optio
             }
             let total: f64 = energy.iter().sum();
             (total > 0.0).then(|| energy.map(|e| e / total))
-        })
-        .collect()
-}
-
-// how wide each bar sounds in stereo, the side's share of the sound, 0 for mono
-fn widths(wav: &Wav, grid: &Grid, level: &[Option<f64>]) -> Vec<Option<f64>> {
-    let channels = wav.info.channels as usize;
-    let rate = wav.info.sample_rate as f64;
-    let frames = wav.samples.len() / channels.max(1);
-    (0..level.len())
-        .map(|bar| {
-            level[bar]?;
-            if channels < 2 {
-                return Some(0.0);
-            }
-            let start = grid.origin + bar as f64 * grid.bar_seconds();
-            let from = ((start * rate).max(0.0) as usize).min(frames);
-            let to = (((start + grid.bar_seconds()) * rate) as usize).min(frames);
-            let (mut mid, mut side) = (0.0f64, 0.0f64);
-            for frame in from..to {
-                let left = wav.samples[frame * channels] as f64;
-                let right = wav.samples[frame * channels + 1] as f64;
-                mid += ((left + right) / 2.0).powi(2);
-                side += ((left - right) / 2.0).powi(2);
-            }
-            (mid + side > 0.0).then(|| side / (mid + side))
         })
         .collect()
 }
@@ -340,6 +319,10 @@ fn compare(
     let width = [
         over_both(&|i| yours.widths[i]),
         over_both(&|i| theirs.widths[i]),
+    ];
+    let space = [
+        over_both(&|i| yours.spaces[i]),
+        over_both(&|i| theirs.spaces[i]),
     ];
     let band_means = |heard: &Heard| -> [f64; 5] {
         let mut sum = [0.0; 5];
@@ -442,6 +425,19 @@ fn compare(
             ));
         }
     }
+    if let [Some(y), Some(s)] = space {
+        if y - s >= SPACE_DB {
+            issues.push(format!(
+                "drier than the song: the loud and quiet moments of each bar are {:.0} dB apart against {:.0} dB in the song, whose sound keeps filling the gaps (reverb, longer releases or a held layer)",
+                y, s
+            ));
+        } else if s - y >= SPACE_DB {
+            issues.push(format!(
+                "fuller than the song between notes: the loud and quiet moments are {:.0} dB apart against {:.0} dB in the song (less reverb or shorter releases)",
+                y, s
+            ));
+        }
+    }
     PartComparison {
         part: part.to_string(),
         render: render_path.display().to_string(),
@@ -453,6 +449,7 @@ fn compare(
         song_db,
         brightness_khz: brightness,
         width,
+        space_db: space,
         bands,
         bars: lines,
     }
@@ -536,6 +533,7 @@ mod tests {
             rhythms: vec![Some(vec![0.25; 16]); n],
             bands: vec![Some(shares); n],
             widths: vec![Some(0.0); n],
+            spaces: vec![Some(12.0); n],
         }
     }
 

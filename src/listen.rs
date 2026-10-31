@@ -1,7 +1,7 @@
 use crate::analysis::chroma;
 use crate::analysis::spectrum::Spectrogram;
 use crate::audio::signal::Signal;
-use crate::audio::wav;
+use crate::audio::wav::{self, Wav};
 use crate::music::Grid;
 use crate::rebuild::{self, Session};
 use crate::separate;
@@ -261,6 +261,57 @@ pub(crate) fn rhythms(
                 })
                 .collect();
             unit(hits)
+        })
+        .collect()
+}
+
+// how wide each bar sounds in stereo, the side's share of the sound, 0 for mono
+pub(crate) fn widths(wav: &Wav, grid: &Grid, level: &[Option<f64>]) -> Vec<Option<f64>> {
+    let channels = wav.info.channels as usize;
+    let rate = wav.info.sample_rate as f64;
+    let frames = wav.samples.len() / channels.max(1);
+    (0..level.len())
+        .map(|bar| {
+            level[bar]?;
+            if channels < 2 {
+                return Some(0.0);
+            }
+            let start = grid.origin + bar as f64 * grid.bar_seconds();
+            let from = ((start * rate).max(0.0) as usize).min(frames);
+            let to = (((start + grid.bar_seconds()) * rate) as usize).min(frames);
+            let (mut mid, mut side) = (0.0f64, 0.0f64);
+            for frame in from..to {
+                let left = wav.samples[frame * channels] as f64;
+                let right = wav.samples[frame * channels + 1] as f64;
+                mid += ((left + right) / 2.0).powi(2);
+                side += ((left - right) / 2.0).powi(2);
+            }
+            (mid + side > 0.0).then(|| side / (mid + side))
+        })
+        .collect()
+}
+
+// how far apart each bar's loud and quiet moments are in decibels, small when reverb, long releases or a held sound fill the gaps between notes
+pub(crate) fn spaces(signal: &Signal, grid: &Grid, level: &[Option<f64>]) -> Vec<Option<f64>> {
+    let frame = 1024;
+    (0..level.len())
+        .map(|bar| {
+            level[bar]?;
+            let (from, to) = bar_samples(signal, grid, bar);
+            let mut levels: Vec<f64> = signal.samples[from..to]
+                .chunks_exact(frame)
+                .map(|chunk| {
+                    let power =
+                        chunk.iter().map(|&s| (s as f64) * (s as f64)).sum::<f64>() / frame as f64;
+                    10.0 * (power + 1e-12).log10()
+                })
+                .collect();
+            if levels.len() < 8 {
+                return None;
+            }
+            levels.sort_by(f64::total_cmp);
+            let at = |share: f64| levels[((levels.len() - 1) as f64 * share).round() as usize];
+            Some(at(0.9) - at(0.2))
         })
         .collect()
 }

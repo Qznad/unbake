@@ -9,6 +9,7 @@ mod arrange;
 mod audio;
 mod basic_pitch;
 mod check;
+mod clues;
 mod combine;
 mod compare;
 mod compare_render;
@@ -150,6 +151,17 @@ enum Command {
         out: Option<PathBuf>,
         #[arg(long, default_value_t = 600, help = "seconds to wait for fl studio")]
         timeout: u64,
+    },
+
+    #[command(
+        about = "signs of effects in the song's stems: notes coming back as echoes (delay), sound filling the gaps (reverb), parts dipping on the kicks (sidechain) and stereo width"
+    )]
+    Clues {
+        folder: PathBuf,
+        #[arg(long, default_value_t = 1, help = "first bar, counting from 1")]
+        from_bar: u32,
+        #[arg(long, help = "how many bars, the rest of the song by default")]
+        bars: Option<u32>,
     },
 
     #[command(
@@ -945,6 +957,38 @@ fn run(command: Command) -> Result<(), String> {
             println!("Channels:    {}", rendered.channels.join(", "));
             Ok(())
         }
+        Command::Clues {
+            folder,
+            from_bar,
+            bars,
+        } => {
+            let found = clues::effect_clues(&folder, from_bar, bars)?;
+            println!("Song bars {}", found.song_bars);
+            for part in &found.parts {
+                let echoes: Vec<String> = part
+                    .echoes
+                    .iter()
+                    .map(|e| {
+                        format!(
+                            "{} {:.2} quieter / {:.2} louder",
+                            e.lag, e.quieter, e.louder
+                        )
+                    })
+                    .collect();
+                println!(
+                    "{} (space {} dB, pump {} dB, width {}) echoes: {}",
+                    part.part,
+                    show(part.space_db),
+                    show(part.pump_db),
+                    show(part.width),
+                    echoes.join(", ")
+                );
+                for clue in &part.clues {
+                    println!("  - {}", clue);
+                }
+            }
+            Ok(())
+        }
         Command::CompareRender {
             project,
             folder,
@@ -968,7 +1012,7 @@ fn run(command: Command) -> Result<(), String> {
             for part in &found.parts {
                 println!();
                 println!(
-                    "{} (rhythm {}, notes {}, level {} dB against {} dB, brightness {} kHz against {}, width {} against {})",
+                    "{} (rhythm {}, notes {}, level {} dB against {} dB, brightness {} kHz against {}, width {} against {}, space {} dB against {})",
                     part.part,
                     show(part.rhythm),
                     show(part.notes),
@@ -977,7 +1021,9 @@ fn run(command: Command) -> Result<(), String> {
                     show(part.brightness_khz[0]),
                     show(part.brightness_khz[1]),
                     show(part.width[0]),
-                    show(part.width[1])
+                    show(part.width[1]),
+                    show(part.space_db[0]),
+                    show(part.space_db[1])
                 );
                 let bands: Vec<String> = part
                     .bands

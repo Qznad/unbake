@@ -240,6 +240,19 @@ fn tools() -> Value {
             }
         },
         {
+            "name": "effect_clues",
+            "description": "Signs of effects in the song's own stems (drums, bass, other) over some bars, each turned into a plain clue with an FL Studio way to get there: notes coming back quieter at a tempo-synced gap (a delay, with the gap: 1/16, 1/8, dotted 1/8, 1/4, dotted 1/4, 1/2), sound filling the gaps between notes (reverb, long releases or a held layer; space_db is how far apart the loud and quiet moments of a bar are, small is wet), a part dipping on every kick (sidechain or a volume shape; pump_db), and stereo width (chorus or widener). These are clues, not proof: a riff that really repeats can look like an echo. Use them to ask the user good questions (is this a delay?) and to choose what to try, then check the result with compare_render.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": folder,
+                    "from_bar": from_bar,
+                    "bars": { "type": "integer", "description": "how many bars, the rest of the song by default" }
+                },
+                "required": ["folder"]
+            }
+        },
+        {
             "name": "compare_render",
             "description": "Render a project through FL Studio and compare how it sounds with the song's stems for the same bars. With part (drums, bass, other or vocals) it renders only that stem's channels and compares them with that stem; with part all, or none, it renders every part and the whole mix, and also says which parts sit too loud or too quiet in the mix (balance). For each part: issues in plain words (silent bars, hits or notes at other times, other notes, too much or too little of a band, darker or brighter, mono or wide), rhythm and notes likeness (1 is the same, under about 0.5 for rhythm or 0.7 for notes is off), the level, the share of the sound in five bands (sub, lows, low mids, high mids, highs) for yours and the song, brightness (where most of the sound sits, in kHz), stereo width (0 mono) and the same per bar. Levels are absolute and the song is mastered, so compare tone, rhythm, notes and balance rather than raw loudness. FL Studio must be closed. Fix the biggest issue, one change at a time, render again and keep the change only when that issue gets smaller; the user's ears decide what sounds right.",
             "inputSchema": {
@@ -445,6 +458,15 @@ fn call_tool(params: &Value) -> Value {
                 let out = optional_path(args, "out")
                     .unwrap_or_else(|| crate::render::default_folder(&file));
                 crate::render::render(&file, stem, &out, std::time::Duration::from_secs(600))
+            })
+            .and_then(text),
+        "effect_clues" => path_arg(args, "folder")
+            .and_then(|folder| {
+                crate::clues::effect_clues(
+                    &folder,
+                    number(args, "from_bar", 1),
+                    args["bars"].as_u64().map(|b| b as u32),
+                )
             })
             .and_then(text),
         "compare_render" => factory_arg(args, "file")
@@ -829,11 +851,11 @@ mod tests {
         );
     }
 
-    // the tool list has twenty-five tools and an unknown tool comes back as an error result
+    // the tool list has twenty-six tools and an unknown tool comes back as an error result
     #[test]
     fn lists_tools() {
         let reply = handle(&json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).unwrap();
-        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 25);
+        assert_eq!(reply["result"]["tools"].as_array().unwrap().len(), 26);
         let call = handle(&json!({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": { "name": "nope", "arguments": {} }
