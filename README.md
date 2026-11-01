@@ -20,8 +20,8 @@ The result is not a copy of the song. It plays the song's chords, bass and groov
 
 1. **Split.** [Demucs](https://github.com/facebookresearch/demucs) separates the song into drums, bass, other and vocals.
 2. **Listen.** unbake finds the tempo and first downbeat, the key, the sections and the drum hits. [Basic Pitch](https://github.com/spotify/basic-pitch) turns the bass and other stems into notes. From those, unbake names the chords (Am9, Bbmaj7, Cm/Eb…), finds which bars repeat, and offers several melody candidates. Every result is a *finding*: a value with a confidence, the alternatives that came close, and what unbake couldn't tell.
-3. **Build.** The agent picks a reference project from FL Studio's demo songs in the same genre, copies its sounds and effect chains, and writes patterns from the song's facts. unbake writes the `.flp` file itself, so FL Studio doesn't need to be open.
-4. **Check and improve.** unbake compares every channel's notes with what the song plays in the same bars. Then the agent works in a loop:
+3. **Build.** The agent picks a reference project from FL Studio's demo songs in the same genre, copies its sounds and effect chains, and writes patterns from the song's facts. Kick, snare and hat samples are chosen by how close they sound to the song's own hits, alone or as two layered samples. unbake writes the `.flp` file itself, so FL Studio doesn't need to be open.
+4. **Check and improve.** unbake compares every channel's notes with what the song plays in the same bars, and checks that each drum sample sounds like the song's. Then the agent works in a loop:
    - render the project through FL Studio's command line
    - compare each part's sound with its stem: rhythm, notes, tone, brightness, stereo width, and how loud it sits in the mix
    - change one thing in the part that's furthest off, such as its volume, a sample, a preset or an effect chain
@@ -97,7 +97,7 @@ To watch the agent build the whole song without stopping you, ask for it in so m
 | | Commands |
 |---|---|
 | Listen | `transcribe`, `analyze`, `split`, `info`, `overview`, `timeline`, `harmony`, `grid`, `parts`, `inspect`, `candidates`, `choose`, `piano-roll`, `sounds-like`, `clues` |
-| Build | `compose` (a project from a JSON description), `write`, `rebuild` |
+| Build | `compose` (a project from a JSON description), `suggest-sounds` (FL's kicks, snares and hats that sound closest to the song's own), `write`, `rebuild` |
 | Check | `check`, `render`, `compare-render`, `eval` |
 | Read FL Studio projects | `flp-info`, `pattern`, `playlist`, `references`, `samples` |
 | Setup | `doctor`, `mcp` |

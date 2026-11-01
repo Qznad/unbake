@@ -53,6 +53,7 @@ pub struct NewChannel<'a> {
     pub volume: Option<u32>,
 }
 
+#[derive(Clone, Copy)]
 pub struct NewNote {
     pub channel: usize,
     pub start: u32,

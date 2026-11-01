@@ -1,3 +1,4 @@
+use crate::drum_sounds;
 use crate::flp::events::Project;
 use crate::flp::info;
 use crate::flp::timeline::{self, ClipSource};
@@ -24,6 +25,8 @@ pub struct ChannelFit {
     pub fitting: usize,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub problems: Vec<StretchFit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sound: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -57,6 +60,7 @@ pub fn check(project: &Project, folder: &Path, song_bar: f64) -> Result<Vec<Chan
     let end = notes.iter().map(|n| n.start + n.length).max().unwrap_or(0);
     let stretch = STRETCH_BARS * BAR;
     let mut out = Vec::new();
+    let mut drum_samples: Vec<(Part, usize, String)> = Vec::new();
     for channel in info::summarize(project).channels {
         let Some(truth) = truth_for(&channel.name) else {
             continue;
@@ -74,7 +78,11 @@ pub fn check(project: &Project, folder: &Path, song_bar: f64) -> Result<Vec<Chan
             },
             fitting: 0,
             problems: Vec::new(),
+            sound: None,
         };
+        if let (Truth::Drum(part), Some(sample)) = (truth, &channel.sample) {
+            drum_samples.push((part, out.len(), sample.clone()));
+        }
         let mut from = 0;
         while from < end {
             let inside: Vec<&Played> = mine
@@ -112,7 +120,38 @@ pub fn check(project: &Project, folder: &Path, song_bar: f64) -> Result<Vec<Chan
         }
         out.push(fit);
     }
+    judge_sounds(folder, &drum_samples, &mut out);
     Ok(out)
+}
+
+// says for each kick, snare and hat channel whether its sample sounds like the song's own hits, judging channels of the same drum together as layers
+fn judge_sounds(folder: &Path, drum_samples: &[(Part, usize, String)], out: &mut [ChannelFit]) {
+    for part in [Part::Kick, Part::Snare, Part::Hat] {
+        let mine: Vec<&(Part, usize, String)> =
+            drum_samples.iter().filter(|(p, _, _)| *p == part).collect();
+        if mine.is_empty() {
+            continue;
+        }
+        let Ok(reference) = drum_sounds::reference(folder, part) else {
+            continue;
+        };
+        let samples: Vec<String> = mine.iter().map(|(_, _, s)| s.clone()).collect();
+        let Ok(judged) = drum_sounds::judge(&reference, &samples) else {
+            continue;
+        };
+        for (_, index, _) in &mine {
+            let others: Vec<&str> = mine
+                .iter()
+                .filter(|(_, i, _)| i != index)
+                .map(|(_, i, _)| out[*i].channel.as_str())
+                .collect();
+            out[*index].sound = Some(if others.is_empty() {
+                judged.verdict.clone()
+            } else {
+                format!("layered with {}: {}", others.join(", "), judged.verdict)
+            });
+        }
+    }
 }
 
 // how well some notes of a channel fit the song between two song ticks, and what is wrong when they don't, empty when they fit

@@ -19,7 +19,7 @@ const SNARE_MID: f32 = 0.7;
 const SNARE_HIGH: f32 = 0.1;
 const SNARE_MID_OVER_LOW: f32 = 0.5;
 const HAT_HIGH: f32 = 0.1;
-const BANDS: usize = 40;
+pub const BANDS: usize = 40;
 
 pub type Bands = [f32; BANDS];
 

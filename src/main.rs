@@ -15,6 +15,7 @@ mod compare;
 mod compare_render;
 mod compose;
 mod doctor;
+mod drum_sounds;
 mod eval;
 mod evidence;
 mod findings;
@@ -151,6 +152,22 @@ enum Command {
         out: Option<PathBuf>,
         #[arg(long, default_value_t = 600, help = "seconds to wait for fl studio")]
         timeout: u64,
+    },
+
+    #[command(
+        about = "the samples in fl studio's packs that sound closest to the song's own kick, snare or hat, judged on the hits that play alone in its drums stem"
+    )]
+    SuggestSounds {
+        folder: PathBuf,
+        #[arg(help = "kick, snare or hat")]
+        part: String,
+        #[arg(long, default_value_t = 5, help = "how many samples to list")]
+        limit: usize,
+        #[arg(
+            long,
+            help = "a folder for listening clips: the song's own hits, then each sample at the same loudness"
+        )]
+        listen: Option<PathBuf>,
     },
 
     #[command(
@@ -507,6 +524,9 @@ fn print_fits(fits: &[check::ChannelFit]) {
             "  {:<14} {} stretches fit, compared with {}",
             fit.channel, fit.fitting, fit.against
         );
+        if let Some(sound) = &fit.sound {
+            println!("    sound: {}", sound);
+        }
         for problem in &fit.problems {
             println!(
                 "    song bar {:>3} (project bar {:>3})  {:>5.2}  {}",
@@ -955,6 +975,57 @@ fn run(command: Command) -> Result<(), String> {
             )?;
             println!("Rendered:    {} ({} s)", rendered.wav, rendered.seconds);
             println!("Channels:    {}", rendered.channels.join(", "));
+            Ok(())
+        }
+        Command::SuggestSounds {
+            folder,
+            part,
+            limit,
+            listen,
+        } => {
+            let part = drum_sounds::drum_part(&part)
+                .ok_or_else(|| "the part must be kick, snare or hat".to_string())?;
+            let found = drum_sounds::suggest(&folder, part, limit, listen.as_deref())?;
+            let shown = |t: &drum_sounds::Traits| {
+                format!(
+                    "bright {:5.2} kHz, sub {:.2} body {:.2} mid {:.2} crack {:.2} sizzle {:.2}, ring {:6.1} dB",
+                    t.brightness_khz, t.sub, t.body, t.mid, t.crack, t.sizzle, t.tail_db
+                )
+            };
+            println!(
+                "Song {} from {} hits alone: {}",
+                found.part,
+                found.song_hits,
+                shown(&found.song)
+            );
+            println!(
+                "Compared {} samples, closest sound first (distance, then trait gap):",
+                found.compared
+            );
+            for s in &found.closest {
+                println!(
+                    "{:>4}. {:5.2} {:4.2}  {}  {}",
+                    s.rank,
+                    s.distance,
+                    s.gap,
+                    shown(&s.traits),
+                    s.sample
+                );
+            }
+            if !found.layers.is_empty() {
+                println!("Layered pairs closer than any of them alone (trait gap):");
+            }
+            for layer in &found.layers {
+                println!(
+                    "      {:4.2}  {}  {}",
+                    layer.gap,
+                    shown(&layer.traits),
+                    layer.samples.join(" + ")
+                );
+            }
+            for clip in &found.clips {
+                println!("Clip: {}", clip);
+            }
             Ok(())
         }
         Command::Clues {

@@ -320,6 +320,7 @@ pub fn expand(spec: &Loop, out: &Path) -> Result<(Loop, Vec<String>), String> {
                 }),
                 effects: true,
                 volume: None,
+                layer_of: None,
             });
             channel_names.insert(block.id, name.clone());
             sounds.push(SectionChannel {

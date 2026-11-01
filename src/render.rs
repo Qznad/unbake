@@ -147,7 +147,7 @@ pub fn missing_samples(project: &Project) -> Vec<String> {
 }
 
 // a sample path with fl studio's factory and user data folders filled in
-fn expand(path: &str) -> PathBuf {
+pub(crate) fn expand(path: &str) -> PathBuf {
     match path.strip_prefix(USER_DATA) {
         Some(rest) => {
             let home = std::env::var_os("USERPROFILE")

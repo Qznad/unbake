@@ -98,6 +98,8 @@ pub struct ChannelSpec {
     pub effects: bool,
     #[serde(default)]
     pub volume: Option<u32>,
+    #[serde(default)]
+    pub layer_of: Option<String>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -453,6 +455,20 @@ pub fn write(spec: &Loop, out: &Path, template: Option<&Path>) -> Result<Written
                     key: (note.key as i32 + copy.transpose).clamp(0, 127) as u8,
                     velocity: note.velocity,
                 });
+            }
+        }
+        for (layer, channel) in spec.channels.iter().enumerate() {
+            if let Some(target) = &channel.layer_of {
+                let target = channel_index(target)?;
+                let doubled: Vec<NewNote> = notes
+                    .iter()
+                    .filter(|n| n.channel == target)
+                    .map(|n| NewNote {
+                        channel: layer,
+                        ..*n
+                    })
+                    .collect();
+                notes.extend(doubled);
             }
         }
         patterns.push(NewPattern {

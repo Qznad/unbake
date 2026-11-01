@@ -72,6 +72,7 @@ This is the path users liked: real producers' sounds playing the song's own fact
 4. **Write the loop** with `compose_loop`, into `Documents/Image-Line/FL Studio/Projects/unbake/<song> loop` so it opens straight in FL. Make it the way a producer would:
    - short patterns (1 bar drums, 2 bar breaks, 4 bar chords, bass and lead) repeated in the playlist, each part on its own track
    - the reference's break or drum pattern copied as is, with the song's kick and snare layered on top as `grids`
+   - kick, snare and hat samples chosen by sound with `suggest_sounds`, never by their name: a name like "Attack Snare" says nothing about how it sounds next to the song's. It compares FL's samples with the song's own hits and says how each differs (body, crack, sizzle, brightness, ring). It narrows the choice, but the ear picks: in the guided pace, write clips with `listen` (into the project folder, like `<loop folder>/sound choices/snare`) and ask the user to choose among the top three and the layers. A layer is two samples on two channels, the second with `layer_of` naming the first, so it doubles every note (one for body, one for crack, a common producer trick)
    - a sub holding one long root per bar, plus an audible bass layer an octave or more up, since a pure sub can't be heard on laptop speakers
    - a fill in the last bar (a snare roll rising in velocity) and a crash on the first bar of each phrase
    - copied channels bring their mixer effects; set `effects: false` for a channel whose insert has filters that were automated in the reference (it comes out silent)
@@ -84,6 +85,7 @@ This is the path users liked: real producers' sounds playing the song's own fact
 5. **Hear it back before the user does.** unbake can render the project through FL Studio's own command line and compare how it really sounds with the song's stems, part by part. FL Studio has to be closed while it renders (it opens, renders and closes by itself, about 10 s a part), so ask the user to save and close it first, and say why.
    - First `effect_clues` on the loop's song bars: signs of a delay (notes coming back quieter at a tempo-synced gap), reverb or held sounds (gaps that never go quiet), sidechain pumping (dips on each kick) and stereo width, each with an FL Studio way to get there. Turn them into questions for the user ("the lead seems to echo a dotted 1/8 later: is that a delay?") rather than facts.
    - Then `compare_render` with part `all`: each part rendered alone and compared with its stem (silent bars, hits or notes at other times, other notes, too much or too little of a band, darker or brighter, mono or wide, drier or fuller), plus `balance`, which part sits too loud or too quiet in the mix.
+   - Read the `check` that compose_loop returns first: a kick, snare or hat whose `sound` doesn't fit the song's is a wrong sample, so swap it for one from `suggest_sounds` before tuning anything else; the render can't point at it, since it measures the drums as one part.
    - Work one part at a time, drums first, then bass, then other: fix the biggest issue, **one change at a time**, render that part again with `compare_render` and the part's name, and keep the change only when that issue got smaller. Typical fixes: a channel's `volume` for balance; another sample or preset, or the register its reference uses, for tone; copying an effect chain (`copy` with effects) from a reference for reverb, delay or width; `effects: false` or a volume reset for a silent part.
    - The song is mastered and uses other sounds, so never chase raw loudness or a perfect match: stop when the issues stop shrinking, and tell the user what got closer and what didn't. Their ears decide.
 6. **Ask the user to listen (stop point 2).** Tell them which file to open, then ask three things: can every part be heard, how does it feel overall, and which part is weakest. Silent parts usually mean a volume of 0 or an automated filter in the copied channel or its effects.
@@ -118,7 +120,7 @@ A faithful draft with every note heard, the stems as muted audio clips and sound
 ## Other tools
 
 - `inspect_part` answers questions about specific bars ("what does the bass play in bar 9?"). Don't list whole songs of notes.
-- `find_samples` finds FL's own kicks, snares, hats, crashes and loops by words.
+- `suggest_sounds` ranks FL's kicks, snares and hats by how close they sound to the song's own hits, with layered pairs and listening clips. `find_samples` finds crashes, loops and other samples by words; don't use it for kick, snare or hat.
 - `playlist` lists any project's tracks and clips in compose_loop's playlist form: what the user changed in a loop, or how a producer arranged a reference song.
 - `sounds_like` finds the bars a stretch matches in chords and drum rhythm, whatever its level: where a quiet intro or break comes from.
 - `song_timeline` maps the whole song part by part with the work left; `check_project` compares any project's notes with the song bar by bar.
@@ -132,6 +134,7 @@ A faithful draft with every note heard, the stems as muted audio clips and sound
 
 - One tempo for the whole song, notes on a straight 1/16 grid in 4/4, so swing, triplets and other meters are lost.
 - Drums are kick, snare and hat only, and a hat on a snare is often missed.
+- `suggest_sounds` needs at least 3 hits of the drum playing alone in the song, and its order among close samples is a guess: it reliably spots a wrong sound, but the user's ear picks the best.
 - The other stem can hold several instruments, so the melody candidates can jump between them. That's why path A rewrites the motif cleanly.
 - unbake can copy plugins and effects but can't set their knobs, so the sound comes from the reference's presets.
 - unbake can't write automation clips yet, so volume fades and filter sweeps are velocity ramps or steps the user draws in FL.
@@ -139,4 +142,4 @@ A faithful draft with every note heard, the stems as muted audio clips and sound
 
 ## Without MCP
 
-The same tools exist on the command line: `unbake doctor`, `unbake transcribe song.mp3 -o folder`, `unbake inspect folder bass --from-bar 33`, `unbake references --min-bpm 160`, `unbake flp-info project.flp`, `unbake pattern project.flp "Main Break"`, `unbake playlist project.flp`, `unbake sounds-like folder --from-bar 1 --bars 4`, `unbake timeline folder --from-bar 9 --bars 4 --approved 33-40`, `unbake check project.flp folder --from-bar 33`, `unbake render project.flp --part drums`, `unbake compare-render project.flp folder --from-bar 33`, `unbake clues folder --from-bar 33 --bars 8`, `unbake samples snare power`, `unbake compose loop.json -o folder`, and for path B `unbake candidates`, `unbake piano-roll`, `unbake choose` and `unbake write`.
+The same tools exist on the command line: `unbake doctor`, `unbake transcribe song.mp3 -o folder`, `unbake inspect folder bass --from-bar 33`, `unbake references --min-bpm 160`, `unbake flp-info project.flp`, `unbake pattern project.flp "Main Break"`, `unbake playlist project.flp`, `unbake sounds-like folder --from-bar 1 --bars 4`, `unbake timeline folder --from-bar 9 --bars 4 --approved 33-40`, `unbake check project.flp folder --from-bar 33`, `unbake render project.flp --part drums`, `unbake compare-render project.flp folder --from-bar 33`, `unbake clues folder --from-bar 33 --bars 8`, `unbake suggest-sounds folder snare --listen clips`, `unbake samples crash`, `unbake compose loop.json -o folder`, and for path B `unbake candidates`, `unbake piano-roll`, `unbake choose` and `unbake write`.
