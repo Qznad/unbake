@@ -21,7 +21,13 @@ The result is not a copy of the song. It plays the song's chords, bass and groov
 1. **Split.** [Demucs](https://github.com/facebookresearch/demucs) separates the song into drums, bass, other and vocals.
 2. **Listen.** unbake finds the tempo and first downbeat, the key, the sections and the drum hits. [Basic Pitch](https://github.com/spotify/basic-pitch) turns the bass and other stems into notes. From those, unbake names the chords (Am9, Bbmaj7, Cm/Eb…), finds which bars repeat, and offers several melody candidates. Every result is a *finding*: a value with a confidence, the alternatives that came close, and what unbake couldn't tell.
 3. **Build.** The agent picks a reference project from FL Studio's demo songs in the same genre, copies its sounds and effect chains, and writes patterns from the song's facts. unbake writes the `.flp` file itself, so FL Studio doesn't need to be open.
-4. **Check.** unbake compares every channel's notes with what the song plays in the same bars. It also renders the project through FL Studio's command line and compares each part's sound with its stem: rhythm, notes, tone, brightness, stereo width, and how loud it sits in the mix.
+4. **Check and improve.** unbake compares every channel's notes with what the song plays in the same bars. Then the agent works in a loop:
+   - render the project through FL Studio's command line
+   - compare each part's sound with its stem: rhythm, notes, tone, brightness, stereo width, and how loud it sits in the mix
+   - change one thing in the part that's furthest off, such as its volume, a sample, a preset or an effect chain
+   - render again, and keep the change only if that part got closer
+
+   It stops working on a part once that part stops getting closer.
 5. **You listen and steer.** By default the agent stops to ask you at set points: the genre and reference, after each loop, and before the full song. You can also ask it to work on its own from start to finish and report every choice it made.
 
 ## Install (Windows)
@@ -78,7 +84,7 @@ Use forward slashes in the path. You can also run `claude mcp add unbake -- C:/p
 
 Save projects under `Documents/Image-Line/FL Studio/Projects/unbake/`, where FL Studio looks for their samples.
 
-To watch the agent build the whole song without stopping you, ask for it in so many words, for example "work on your own from scratch without stopping me". Keep FL Studio closed during the run, because the agent renders through it.
+To watch the agent build the whole song without stopping you, ask for it in so many words, for example "work on your own from scratch without stopping me". It then makes every choice itself and runs the improve loop after the main loop, each section and the whole song, until they stop getting closer. At the end it reports every choice it made, and what got closer and what didn't. Keep FL Studio closed during the run, because the agent renders through it.
 
 ## Use it on its own
 
