@@ -1,5 +1,7 @@
-use crate::analysis::spectrum::Spectrogram;
+use crate::analysis::pitch;
+use crate::analysis::spectrum::{HARMONIC_FACTOR, HOP, Spectrogram};
 use crate::audio::convert;
+use crate::audio::math;
 use crate::audio::signal::Signal;
 use crate::audio::wav::{self, Wav};
 use crate::combine;
@@ -33,6 +35,10 @@ const NARROW: f64 = 0.05;
 const BALANCE_DB: f64 = 3.0;
 const SPACE_DB: f64 = 6.0;
 const RENDER_TIMEOUT: u64 = 600;
+const OCTAVE: f64 = 12.0;
+const OCTAVE_NEAR: f64 = 2.5;
+const CLEAR: f32 = 0.6;
+const CLEAR_FRAMES: usize = 8;
 
 type Levels = Vec<Option<f64>>;
 
@@ -54,6 +60,8 @@ pub struct BarLine {
     pub rhythm: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pitch_gap: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -64,6 +72,8 @@ pub struct PartComparison {
     pub issues: Vec<String>,
     pub rhythm: Option<f64>,
     pub notes: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pitch_gap: Option<f64>,
     pub yours_db: Option<f64>,
     pub song_db: Option<f64>,
     pub brightness_khz: [Option<f64>; 2],
@@ -88,6 +98,7 @@ struct Heard {
     bands: Vec<Option<[f64; 5]>>,
     widths: Vec<Option<f64>>,
     spaces: Vec<Option<f64>>,
+    heights: Vec<Option<f64>>,
 }
 
 // renders a project, one stem of it or each stem and the whole mix, and compares how it sounds with the song's stems from a song bar on
@@ -187,8 +198,9 @@ fn compare_wav(
     let n = length
         .min(in_render.max(1))
         .min((session.bars as usize).saturating_sub(first));
-    let yours = hear(&render_wav, &render_grid, 0, n);
-    let theirs = hear(&song_wav, &session.grid, first, n);
+    let line = part == "bass";
+    let yours = hear(&render_wav, &render_grid, 0, n, line);
+    let theirs = hear(&song_wav, &session.grid, first, n, line);
     let comparison = compare(part, render_path, first, n, &yours, &theirs);
     Ok((comparison, yours.level, theirs.level))
 }
@@ -199,8 +211,8 @@ fn load(path: &Path) -> Result<Wav, String> {
     convert::load(path, &work)
 }
 
-// every measure of some bars of a recording, starting at a 0 based bar
-fn hear(wav: &Wav, grid: &Grid, first: usize, bars: usize) -> Heard {
+// every measure of some bars of a recording, starting at a 0 based bar, with the pitch height of each bar for a part that plays one line
+fn hear(wav: &Wav, grid: &Grid, first: usize, bars: usize, line: bool) -> Heard {
     let signal = Signal::from_wav(wav);
     let total = first + bars;
     let level = listen::levels(&signal, grid, total);
@@ -211,6 +223,11 @@ fn hear(wav: &Wav, grid: &Grid, first: usize, bars: usize) -> Heard {
     let bands = band_shares(&signal, grid, &level)[first..].to_vec();
     let widths = listen::widths(wav, grid, &level)[first..].to_vec();
     let spaces = listen::spaces(&signal, grid, &level)[first..].to_vec();
+    let heights = if line {
+        heights(&signal, grid, &level[first..], first)
+    } else {
+        vec![None; bars]
+    };
     Heard {
         level: slice(level),
         tops: slice(tops),
@@ -219,7 +236,34 @@ fn hear(wav: &Wav, grid: &Grid, first: usize, bars: usize) -> Heard {
         bands,
         widths,
         spaces,
+        heights,
     }
+}
+
+// the middle pitch of each bar as a midi note, from the frames where one clear pitch sounds, tracked only over the bars asked for
+fn heights(signal: &Signal, grid: &Grid, level: &[Option<f64>], first: usize) -> Vec<Option<f64>> {
+    let bar = grid.bar_seconds();
+    let start = (grid.origin + first as f64 * bar).max(0.0);
+    let piece = signal.slice(start, start + level.len() as f64 * bar);
+    let low = piece.normalized().downsample(HARMONIC_FACTOR);
+    let hop = HOP / HARMONIC_FACTOR;
+    let frames = pitch::track(&low, hop, 30.0, 400.0);
+    let rate = low.sample_rate as f64 / hop as f64;
+    let offset = grid.origin + first as f64 * bar - start;
+    (0..level.len())
+        .map(|i| {
+            level[i]?;
+            let from = ((offset + i as f64 * bar) * rate).max(0.0) as usize;
+            let to = (((offset + (i + 1) as f64 * bar) * rate) as usize).min(frames.len());
+            let keys: Vec<f32> = frames
+                .get(from..to)?
+                .iter()
+                .filter(|f| f.clarity >= CLEAR && f.hz > 0.0)
+                .map(|f| math::hz_to_midi(f.hz))
+                .collect();
+            (keys.len() >= CLEAR_FRAMES).then(|| math::percentile(&keys, 0.5) as f64)
+        })
+        .collect()
 }
 
 // the share of each bar's sound in five bands, from the sub to the highs
@@ -270,6 +314,7 @@ fn compare(
     let mut extra = Vec::new();
     let mut off_rhythm = Vec::new();
     let mut off_notes = Vec::new();
+    let mut gaps = Vec::new();
     let mut both = Vec::new();
     for i in 0..n {
         let bar = (first + i + 1) as u32;
@@ -279,6 +324,10 @@ fn compare(
             .then(|| cosine(&yours.colours[i], &theirs.colours[i]))
             .flatten()
             .map(round);
+        let pitch_gap = match (yours.heights[i], theirs.heights[i]) {
+            (Some(a), Some(b)) => Some(((a - b) * 10.0).round() / 10.0),
+            _ => None,
+        };
         match (plays(y), plays(s)) {
             (false, true) => silent.push(bar),
             (true, false) => extra.push(bar),
@@ -290,6 +339,9 @@ fn compare(
                 if notes.is_some_and(|c| c < NOTES_OFF) {
                     off_notes.push(bar);
                 }
+                if let Some(gap) = pitch_gap {
+                    gaps.push((bar, gap));
+                }
             }
             (false, false) => {}
         }
@@ -299,6 +351,7 @@ fn compare(
             song_db: s.map(|v| v.round() as i32),
             rhythm,
             notes,
+            pitch_gap,
         });
     }
     let average = |values: Vec<Option<f64>>| listen::mean(&values).map(round);
@@ -348,7 +401,11 @@ fn compare(
         })
         .collect();
 
+    let pitch_gap = middle_gap(&gaps);
     let mut issues = Vec::new();
+    if let Some(issue) = octave_issue(part, &gaps, pitch_gap) {
+        issues.push(issue);
+    }
     if !silent.is_empty() {
         issues.push(format!(
             "silent in song bars {} where the song's {} plays: check its channels are unmuted, audible and have notes there",
@@ -445,6 +502,7 @@ fn compare(
         issues,
         rhythm,
         notes,
+        pitch_gap,
         yours_db,
         song_db,
         brightness_khz: brightness,
@@ -453,6 +511,42 @@ fn compare(
         bands,
         bars: lines,
     }
+}
+
+// the middle of the bars' pitch gaps in semitones, none when no bar had a clear pitch on both sides
+fn middle_gap(gaps: &[(u32, f64)]) -> Option<f64> {
+    let mut values: Vec<f64> = gaps.iter().map(|&(_, gap)| gap).collect();
+    values.sort_by(|a, b| a.total_cmp(b));
+    values.get(values.len() / 2).copied()
+}
+
+// an issue when a part sits a whole number of octaves away from the song's, with the bars where it does and how to fix it
+fn octave_issue(part: &str, gaps: &[(u32, f64)], middle: Option<f64>) -> Option<String> {
+    let middle = middle?;
+    let octaves = (middle / OCTAVE).round();
+    if octaves == 0.0 || (middle - octaves * OCTAVE).abs() > OCTAVE_NEAR {
+        return None;
+    }
+    let bars: Vec<u32> = gaps
+        .iter()
+        .filter(|&&(_, gap)| (gap - octaves * OCTAVE).abs() <= OCTAVE_NEAR)
+        .map(|&(bar, _)| bar)
+        .collect();
+    let count = octaves.abs() as i32;
+    Some(format!(
+        "sits {} {} the song's {} ({:+.1} semitones in the middle, in bars {}): move its notes by {:+}, or its preset may play {} off from the written notes",
+        if count == 1 {
+            "an octave".to_string()
+        } else {
+            format!("{} octaves", count)
+        },
+        if octaves > 0.0 { "above" } else { "below" },
+        part,
+        middle,
+        ranges(&bars),
+        -(octaves as i32) * 12,
+        if count == 1 { "an octave" } else { "octaves" }
+    ))
 }
 
 // how loud each part sits against the whole mix in the render compared with the song, where it differs enough to hear
@@ -534,7 +628,43 @@ mod tests {
             bands: vec![Some(shares); n],
             widths: vec![Some(0.0); n],
             spaces: vec![Some(12.0); n],
+            heights: vec![None; n],
         }
+    }
+
+    // a sine at a pitch, four bars long at 120 bpm
+    fn sine(hz: f64) -> Signal {
+        let rate = 44100;
+        Signal {
+            samples: (0..rate * 8)
+                .map(|i| {
+                    (2.0 * std::f64::consts::PI * hz * i as f64 / rate as f64).sin() as f32 * 0.5
+                })
+                .collect(),
+            sample_rate: rate as u32,
+        }
+    }
+
+    // a bass an octave above the song's is found by its pitch, with the transpose that fixes it
+    #[test]
+    fn finds_a_bass_an_octave_off() {
+        let grid = Grid {
+            bpm: 120.0,
+            origin: 0.0,
+        };
+        let level = vec![Some(-10.0); 4];
+        let mut yours = heard(&level, 0.05);
+        let mut song = heard(&level, 0.05);
+        yours.heights = heights(&sine(110.0), &grid, &level, 0);
+        song.heights = heights(&sine(55.0), &grid, &level, 0);
+        assert!((yours.heights[0].unwrap() - 45.0).abs() < 0.5);
+        let found = compare("bass", Path::new("x.wav"), 0, 4, &yours, &song);
+        assert!((found.pitch_gap.unwrap() - 12.0).abs() < 0.5);
+        assert!(found.issues[0].starts_with("sits an octave above the song's bass"));
+        assert!(found.issues[0].contains("move its notes by -12"));
+        song.heights = heights(&sine(110.0), &grid, &level, 0);
+        let same = compare("bass", Path::new("x.wav"), 0, 4, &yours, &song);
+        assert!(same.issues.iter().all(|i| !i.contains("octave")));
     }
 
     // a part that stays silent where the song plays, and has far fewer highs, gets both written up
