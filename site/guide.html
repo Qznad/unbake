@@ -28,6 +28,7 @@
       <p class="lede">You talk to the agent, the agent uses unbake, and you listen in FL Studio. The agent stops at a few points to ask you, because your ears are the test. Here is what happens at each step.</p>
 
       <nav class="toc" aria-label="On this page">
+        <p class="toc-first"><a href="#claude">Before you start: set up Claude Code</a></p>
         <ol>
           <li><a href="#start">Ask for a loop</a></li>
           <li><a href="#heard">Answer what it asks</a></li>
@@ -39,7 +40,26 @@
         </ol>
       </nav>
 
-      <p>If unbake isn't installed yet, start with <a href="install.html">Install</a>.</p>
+      <h2 id="claude">Before you start: Claude Code</h2>
+      <p>unbake works through an AI agent. It's built and tested with <a href="https://claude.com/claude-code">Claude Code</a>, which runs inside VS Code or in a terminal. You need a Claude plan that includes Claude Code, or an Anthropic API key.</p>
+      <h3>In VS Code</h3>
+      <p>This is how unbake is tested, and the easiest way to follow along.</p>
+      <ol>
+        <li>Install <a href="https://code.visualstudio.com">VS Code</a>, then the <b>Claude Code</b> extension from its Extensions panel, and sign in.</li>
+        <li>Pick a folder to work in, like <code>Documents\unbake work</code>, and open it with <b>File → Open Folder</b>. Claude Code keeps its chats per folder.</li>
+        <li>Open the Claude Code panel and paste the <a href="install.html">install line</a>. Claude asks before it runs each command: read it, then allow it.</li>
+        <li>When setup is done, press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> and run <b>Developer: Reload Window</b>, so Claude Code loads unbake.</li>
+        <li>Start a new chat and ask "Do you have the unbake tools?". It should list them and run a quick check.</li>
+      </ol>
+      <h3>In a terminal</h3>
+      <p>With the Claude Code command line installed, run <code>claude</code> in your work folder and paste the same install line. When setup is done, quit and run <code>claude</code> again.</p>
+      <h3>Working with the agent</h3>
+      <ul>
+        <li><strong>One chat per song.</strong> Start a new chat for a new song, so choices from one song don't carry over to the next.</li>
+        <li><strong>Answer its questions.</strong> They often come as choices you can click, and you can always type your own answer instead.</li>
+        <li><strong>Allow unbake's tools.</strong> The first time it uses one, Claude Code asks for permission. You can allow them for the whole chat.</li>
+        <li><strong>A whole song is a long session.</strong> On a plan with usage limits you may need to pause and come back. Your projects stay in the song's folder either way.</li>
+      </ul>
 
       <h2 id="start">1. Ask for a loop</h2>
       <p>Give the agent the song and a folder for the project. Use a folder under <code>Documents\Image-Line\FL Studio\Projects\unbake</code>, where FL Studio looks for the project's samples, and a new folder for each song.</p>
