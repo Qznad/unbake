@@ -1153,6 +1153,35 @@ mod tests {
         assert_eq!(project.events[mode].value, events::Value::Byte(1));
     }
 
+    // a pattern holding several channels and a layer is written in time order, since fl studio skips notes that go back in time
+    #[test]
+    fn writes_notes_in_time_order() {
+        let spec: Loop = serde_json::from_str(
+            r#"{
+                "name": "order test", "tempo": 140, "bars": 2,
+                "channels": [
+                    { "name": "Kick", "sample": "C:/kick.wav" },
+                    { "name": "Hat", "sample": "C:/hat.wav" },
+                    { "name": "Hat Layer", "sample": "C:/hat 2.wav", "layer_of": "Hat" }
+                ],
+                "patterns": [
+                    { "name": "Drums", "bars": 2, "grids": [
+                        { "channel": "Kick", "hits": "x.......x.......x.......x......." },
+                        { "channel": "Hat", "hits": "..x...x...x...x...x...x...x...x." }
+                    ] }
+                ]
+            }"#,
+        )
+        .unwrap();
+        let dir = std::env::temp_dir().join("unbake_order_test");
+        let written = write(&spec, &dir, None).unwrap();
+        let project = events::read(Path::new(&written.path)).unwrap();
+        let notes = timeline::pattern_notes(&project).remove(&1).unwrap();
+        assert_eq!(notes.len(), 4 + 8 + 8);
+        assert!(notes.windows(2).all(|pair| pair[0].start <= pair[1].start));
+        assert_eq!(notes[0].channel, 0);
+    }
+
     // a misspelled or unknown setting is refused with its name instead of being ignored
     #[test]
     fn refuses_unknown_settings() {

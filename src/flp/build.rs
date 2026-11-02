@@ -121,7 +121,9 @@ pub fn build(
     let mut pattern_events = Vec::new();
     for pattern in &arrangement.patterns {
         let mut notes = Vec::new();
-        for note in &pattern.notes {
+        let mut ordered: Vec<_> = pattern.notes.iter().collect();
+        ordered.sort_by_key(|note| note.start);
+        for note in ordered {
             let Some(&(_, channel)) = channels.iter().find(|(p, _)| *p == note.part) else {
                 continue;
             };
@@ -266,7 +268,9 @@ pub fn compose(
     let mut pattern_events = Vec::new();
     for (n, new) in patterns.iter().enumerate() {
         let mut notes = Vec::new();
-        for note in &new.notes {
+        let mut ordered: Vec<_> = new.notes.iter().collect();
+        ordered.sort_by_key(|note| note.start);
+        for note in ordered {
             notes.extend(note_bytes(
                 note.channel as u16,
                 scale(note.start),
