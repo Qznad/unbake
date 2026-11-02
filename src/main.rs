@@ -1,4 +1,5 @@
 #![allow(
+    unknown_lints,
     clippy::needless_range_loop,
     clippy::collapsible_if,
     clippy::chunks_exact_to_as_chunks

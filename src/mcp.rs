@@ -53,7 +53,7 @@ fn handle(request: &Value) -> Option<Value> {
         }),
         "ping" => json!({}),
         "tools/list" => json!({ "tools": tools() }),
-        "tools/call" => call_tool(&request["params"]),
+        "tools/call" => guarded(|| call_tool(&request["params"])),
         _ => {
             return Some(error_reply(
                 id,
@@ -420,6 +420,23 @@ fn tools() -> Value {
             }
         }
     ])
+}
+
+// runs a tool, turning a crash inside it into an error the agent can read, so the server keeps running
+fn guarded(call: impl FnOnce() -> Value) -> Value {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)).unwrap_or_else(
+        |crash| {
+            let reason = crash
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| crash.downcast_ref::<&str>().map(|s| s.to_string()))
+                .unwrap_or_else(|| "no reason given".to_string());
+            json!({
+                "content": [{ "type": "text", "text": format!("unbake crashed on this call ({}), please report it at https://github.com/Qznad/unbake/issues with the file you used", reason) }],
+                "isError": true
+            })
+        },
+    )
 }
 
 // runs a tool and wraps its answer, or its error, for the agent
@@ -891,5 +908,19 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(call["result"]["isError"], true);
+    }
+
+    // a tool that crashes comes back as an error naming the reason, instead of ending the server
+    #[test]
+    fn survives_a_crashing_tool() {
+        let reply = guarded(|| panic!("a test crash"));
+        assert_eq!(reply["isError"], true);
+        assert!(
+            reply["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("a test crash")
+        );
+        assert_eq!(guarded(|| json!({ "isError": false }))["isError"], false);
     }
 }

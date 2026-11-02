@@ -2,6 +2,7 @@
 name = "unbake"
 version = "0.1.1"
 edition = "2024"
+rust-version = "1.87"
 license = "MIT"
 
 [dependencies]

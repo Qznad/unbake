@@ -183,6 +183,14 @@ pub fn run(options: &Options) -> Result<Report, String> {
     build(options, &session)
 }
 
+// the error for a worker thread that crashed, so the caller gets a message instead of the whole program stopping
+fn crashed(work: &str) -> String {
+    format!(
+        "{} crashed on this song, please report it at https://github.com/Qznad/unbake/issues",
+        work
+    )
+}
+
 // listens to a song and saves everything it hears as a session in the rebuild folder, ready to be written as a project
 pub fn transcribe(options: &Options) -> Result<Session, String> {
     let out = output_dir(options);
@@ -246,14 +254,21 @@ pub fn transcribe(options: &Options) -> Result<Session, String> {
             let vocals =
                 scope.spawn(|| sung.then(|| basic_pitch::transcribe(&vocals_path, &note_dir)));
             let chords = scope.spawn(|| transcribe_chords(&stems.other, &stems.bass, &grid, bars));
-            (
-                drums.join().expect("drum transcription crashed"),
-                bass.join().expect("bass transcription crashed"),
-                other.join().expect("melody transcription crashed"),
-                vocals.join().expect("vocal transcription crashed"),
-                chords.join().expect("chord detection crashed"),
-            )
-        });
+            let joined = (
+                drums.join(),
+                bass.join(),
+                other.join(),
+                vocals.join(),
+                chords.join(),
+            );
+            Ok::<_, String>((
+                joined.0.map_err(|_| crashed("drum transcription"))?,
+                joined.1.map_err(|_| crashed("bass transcription"))?,
+                joined.2.map_err(|_| crashed("melody transcription"))?,
+                joined.3.map_err(|_| crashed("vocal transcription"))?,
+                joined.4.map_err(|_| crashed("chord detection"))?,
+            ))
+        })?;
     let mut warnings = Vec::new();
     let bass_from_basic_pitch = heard_bass.is_ok();
     let (bass_notes, bass_heard) = match heard_bass {
@@ -541,11 +556,12 @@ pub fn build(options: &Options, session: &Session) -> Result<Report, String> {
                     start,
                 )
             });
-            (
-                bass.join().expect("bass sound matching crashed"),
-                other.join().expect("other sound matching crashed"),
-            )
-        });
+            let joined = (bass.join(), other.join());
+            Ok::<_, String>((
+                joined.0.map_err(|_| crashed("bass sound matching"))?,
+                joined.1.map_err(|_| crashed("other sound matching"))?,
+            ))
+        })?;
         voices.bass = bass_match.voices.bass;
         voices.melody = other_match.voices.melody;
         voices.chords = other_match.voices.chords;
