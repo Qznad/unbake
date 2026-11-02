@@ -331,6 +331,11 @@ h3 {
   color: var(--text);
 }
 
+.note.early {
+  max-width: 44em;
+  margin: 28px 0 0;
+}
+
 .playlist-figure {
   margin: 36px 0 0;
 }

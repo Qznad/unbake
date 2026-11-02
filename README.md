@@ -6,7 +6,7 @@ Give unbake an mp3 or wav. It splits the song into stems and listens for the tem
 
 The result is not a copy of the song. It plays the song's chords, bass and groove in a clean, editable project, and it tells you what came from the song and what didn't. Your ears decide whether it's close.
 
-> **Status:** early. The FL Studio side runs on Windows only, and it has been tested on electronic instrumentals. It does well on some songs and badly on others: see [What works and what doesn't](#what-works-and-what-doesnt).
+> **Status:** early builds (version 0.1), with a long way to go. The FL Studio side runs on Windows only, and it has been tested on electronic instrumentals. It does well on some songs and badly on others: see [What works and what doesn't](#what-works-and-what-doesnt).
 
 ## What a project contains
 
