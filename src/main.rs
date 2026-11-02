@@ -30,6 +30,7 @@ mod rebuild;
 mod render;
 mod report;
 mod separate;
+mod setup;
 mod song_map;
 mod sounds;
 mod synth;
@@ -375,6 +376,17 @@ enum Command {
     Doctor {
         #[arg(long, help = "print the checks as json")]
         json: bool,
+    },
+
+    #[command(
+        about = "install what unbake needs (ffmpeg, uv, demucs, basic pitch) and connect it to claude code, showing the plan first"
+    )]
+    Setup {
+        #[arg(
+            long,
+            help = "go ahead without asking, after the plan has been shown and approved"
+        )]
+        yes: bool,
     },
 }
 
@@ -1246,21 +1258,55 @@ fn run(command: Command) -> Result<(), String> {
                 println!("{}", text);
                 return Ok(());
             }
-            for c in &checks {
-                let status = match c.status {
-                    doctor::Status::Ok => "ok",
-                    doctor::Status::Warning => "warning",
-                    doctor::Status::Missing => "missing",
-                };
-                println!("{:<12} {:<8} {}", c.name, status, c.detail);
-                if c.status != doctor::Status::Ok {
-                    println!("{:<21} needed for {}", "", c.needed_for);
-                }
-                if let Some(fix) = &c.fix {
-                    println!("{:<21} fix: {}", "", fix);
-                }
-            }
+            print_checks(&checks);
             Ok(())
+        }
+        Command::Setup { yes } => {
+            let plan = setup::plan();
+            setup::print(&plan);
+            if plan.steps.is_empty() {
+                println!();
+                print_checks(&doctor::run());
+                return Ok(());
+            }
+            if !yes && !setup::ask() {
+                println!(
+                    "\nNothing was changed. To go ahead, run: unbake setup --yes\nIn a terminal opened before unbake was installed, use its full path: {} setup --yes",
+                    setup::command_path()
+                );
+                return Ok(());
+            }
+            let failed = setup::run(&plan);
+            println!();
+            print_checks(&doctor::run());
+            if !failed.is_empty() {
+                return Err(format!(
+                    "these steps failed, so try them by hand: {}",
+                    failed.join("; ")
+                ));
+            }
+            println!(
+                "\nDone. Restart Claude Code (in VS Code, run Developer: Reload Window) so it loads unbake, then ask it for a loop of a song."
+            );
+            Ok(())
+        }
+    }
+}
+
+// prints doctor's checks, with what each missing tool is for and how to fix it
+fn print_checks(checks: &[doctor::Check]) {
+    for c in checks {
+        let status = match c.status {
+            doctor::Status::Ok => "ok",
+            doctor::Status::Warning => "warning",
+            doctor::Status::Missing => "missing",
+        };
+        println!("{:<12} {:<8} {}", c.name, status, c.detail);
+        if c.status != doctor::Status::Ok {
+            println!("{:<21} needed for {}", "", c.needed_for);
+        }
+        if let Some(fix) = &c.fix {
+            println!("{:<21} fix: {}", "", fix);
         }
     }
 }

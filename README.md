@@ -32,40 +32,38 @@ The result is not a copy of the song. It plays the song's chords, bass and groov
 
 ## Install (Windows)
 
-You need:
+You need Windows 10 or 11, FL Studio 2024 or later (tested with FL Studio 25.1), and an agent that uses MCP tools, such as [Claude Code](https://claude.com/claude-code). An NVIDIA GPU is optional and makes Demucs about 4 times faster.
 
-- Windows 10 or 11, and FL Studio 2024 or later (tested with FL Studio 25.1)
-- Rust, ffmpeg, uv, Demucs and Basic Pitch
-- optionally an NVIDIA GPU, which makes Demucs about 4 times faster
+Paste this into Claude Code:
 
-In PowerShell:
+> Install unbake: run `irm https://qznad.github.io/unbake/install.ps1 | iex` in PowerShell, show me the setup plan it prints, and run it once I say yes.
+
+Or run it in PowerShell yourself:
+
+```powershell
+irm https://qznad.github.io/unbake/install.ps1 | iex
+```
+
+The script downloads the latest `unbake.exe` from [Releases](https://github.com/Qznad/unbake/releases) into `%LOCALAPPDATA%\Programs\unbake`, checks it against its published checksum, and adds it to your PATH. Then it runs `unbake setup`. Setup lists what's missing (ffmpeg, uv, Demucs, Basic Pitch, and the connection to Claude Code) and asks before installing anything. An agent shows you that plan and runs `unbake setup --yes` once you agree. Restart Claude Code afterwards so it loads unbake. To update, run the same line again.
+
+To build it yourself instead:
 
 ```powershell
 winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
 winget install Rustlang.Rustup
-winget install Gyan.FFmpeg
-winget install astral-sh.uv
-uv tool install --python 3.11 demucs --with numpy --with soundfile
-uv tool install --python 3.10 basic-pitch --with "setuptools<81"
-uv tool update-shell
-```
-
-Open a new terminal so the tools are on your PATH, then build unbake:
-
-```powershell
 git clone https://github.com/Qznad/unbake
 cd unbake
 cargo build --release
-.\target\release\unbake.exe doctor
+.\target\release\unbake.exe setup
 ```
 
-`doctor` checks each tool and says what it's needed for. It also says how to fix anything that's missing, including the command for a GPU build of Demucs.
+`unbake doctor` checks each tool at any time. It says what each one is needed for and how to fix it.
 
 **On Linux and macOS:** unbake started on Linux, and the listening side and `rebuild` run there too. Reference sounds, sample search and rendering look for FL Studio's Windows install, so they don't work there yet. macOS is untested.
 
 ## Use it with an agent
 
-unbake runs as an [MCP](https://modelcontextprotocol.io) server, so an agent such as [Claude Code](https://claude.com/claude-code) can call its tools. Add it to a `.mcp.json` file in the folder you work from:
+unbake runs as an [MCP](https://modelcontextprotocol.io) server, so an agent such as [Claude Code](https://claude.com/claude-code) can call its tools. `unbake setup` connects it for you. To connect it by hand, add it to a `.mcp.json` file in the folder you work from:
 
 ```json
 {
@@ -100,7 +98,7 @@ To watch the agent build the whole song without stopping you, ask for it in so m
 | Build | `compose` (a project from a JSON description), `suggest-sounds` (FL's kicks, snares and hats that sound closest to the song's own), `write`, `rebuild` |
 | Check | `check`, `render`, `compare-render`, `eval` |
 | Read FL Studio projects | `flp-info`, `pattern`, `playlist`, `references`, `samples` |
-| Setup | `doctor`, `mcp` |
+| Setup | `setup`, `doctor`, `mcp` |
 
 `unbake <command> --help` explains each one.
 

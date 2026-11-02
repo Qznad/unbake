@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Install unbake</title>
-  <meta name="description" content="How to install unbake on Windows and connect it to an AI agent such as Claude Code.">
+  <meta name="description" content="Install unbake on Windows in one line and connect it to an AI agent such as Claude Code.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -25,64 +25,68 @@
     <section>
       <p class="eyebrow">Install</p>
       <h1>Set up unbake on Windows</h1>
-      <p class="lede">It takes about 15 minutes, most of it downloads. You install a few free tools, build unbake, then connect it to your agent.</p>
-      <p class="note"><strong>A one-line installer is on its way.</strong> It will download a ready-made unbake, set up the tools below and connect it to Claude Code for you. Until then, these are the steps.</p>
+      <p class="lede">One line installs unbake and the tools it needs, and connects it to Claude Code. It shows you what it will do and asks first.</p>
 
       <h2>What you need</h2>
       <ul>
         <li>Windows 10 or 11</li>
         <li>FL Studio 2024 or later (tested with FL Studio 25.1). unbake copies sounds from the demo projects that come with it.</li>
-        <li>An AI agent that can use MCP tools, such as <a href="https://claude.com/claude-code">Claude Code</a> in the terminal or in VS Code</li>
-        <li>About 10 GB of free space, most of it for the C++ build tools and Demucs</li>
-        <li>Optional: an NVIDIA graphics card, which makes splitting a song about 4 times faster</li>
+        <li>An AI agent that uses MCP tools, such as <a href="https://claude.com/claude-code">Claude Code</a> in the terminal or in VS Code</li>
+        <li>About 4 GB of free space with an NVIDIA card, whose faster version of Demucs is the biggest download, and less without one</li>
       </ul>
 
-      <h2>1. Install the tools</h2>
-      <p>Open PowerShell and run these one after the other. They install a C++ build tool and Rust (to build unbake), ffmpeg (to open mp3s), uv (to install Python tools), Demucs (to split songs into stems) and Basic Pitch (to turn stems into notes).</p>
-<pre><code>winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
-winget install Rustlang.Rustup
-winget install Gyan.FFmpeg
-winget install astral-sh.uv
-uv tool install --python 3.11 demucs --with numpy --with soundfile
-uv tool install --python 3.10 basic-pitch --with "setuptools&lt;81"
-uv tool update-shell</code></pre>
-      <p>Then close PowerShell and open a new one, so it finds the new tools.</p>
+      <h2>Install with your agent</h2>
+      <p>Paste this into Claude Code:</p>
+<pre class="prompt"><code>Install unbake: run irm https://qznad.github.io/unbake/install.ps1 | iex in PowerShell, show me the setup plan it prints, and run it once I say yes.</code></pre>
+      <p>It prints a plan, the agent shows it to you, and nothing is installed until you agree. When it's done, restart Claude Code (in VS Code, run <b>Developer: Reload Window</b>) so it loads unbake.</p>
 
-      <h2>2. Build unbake</h2>
-<pre><code>git clone https://github.com/Qznad/unbake
-cd unbake
-cargo build --release</code></pre>
-      <p>The first build takes a few minutes. Then check everything is in place:</p>
-<pre><code>.\target\release\unbake.exe doctor</code></pre>
-      <p><code>doctor</code> checks each tool, says what it's needed for and how to fix anything missing. If you have an NVIDIA card, it also gives you the command that makes Demucs use it.</p>
+      <h2>Or install it yourself</h2>
+      <p>In PowerShell:</p>
+<pre><code>irm https://qznad.github.io/unbake/install.ps1 | iex</code></pre>
+      <p>It shows the same plan and asks <code>Go ahead? [y/N]</code>.</p>
 
-      <h2>3. Connect it to your agent</h2>
-      <p>Pick a folder to work in, for example <code>Documents\unbake work</code>. Create a file named <code>.mcp.json</code> in it, with the path to your <code>unbake.exe</code>:</p>
-<pre><code>{
-  "mcpServers": {
-    "unbake": {
-      "command": "C:/path/to/unbake/target/release/unbake.exe",
-      "args": ["mcp"]
-    }
-  }
-}</code></pre>
-      <p>Use forward slashes in the path. Or, with Claude Code in a terminal, run this once instead:</p>
-<pre><code>claude mcp add unbake -- C:/path/to/unbake/target/release/unbake.exe mcp</code></pre>
-      <p>Open that folder in Claude Code. When it asks whether to use the <b>unbake</b> server, say yes. The server brings its own instructions for the agent, so there's nothing else to install.</p>
+      <h2>What the installer does</h2>
+      <ol>
+        <li>Downloads the latest <code>unbake.exe</code> from <a href="https://github.com/Qznad/unbake/releases">GitHub Releases</a> into <code>%LOCALAPPDATA%\Programs\unbake</code>, and refuses it unless it matches its published checksum.</li>
+        <li>Adds that folder to your PATH.</li>
+        <li>Runs <code>unbake setup</code>, which checks what's already there and offers only what's missing:
+          <ul>
+            <li>ffmpeg (opens mp3s) and uv (installs Python tools), with winget</li>
+            <li>Demucs (splits songs into stems), with its GPU version if you have an NVIDIA card</li>
+            <li>Basic Pitch (turns stems into notes)</li>
+            <li>the connection to Claude Code, for every folder you open</li>
+          </ul>
+        </li>
+        <li>Ends with <code>unbake doctor</code>, which says whether each tool works.</li>
+      </ol>
 
-      <h2>4. Check it works</h2>
-      <p>Ask your agent:</p>
+      <h2>Check it works</h2>
+      <p>After restarting Claude Code, ask it:</p>
       <blockquote>Do you have the unbake tools? Run the doctor.</blockquote>
-      <p>It should list the tools and report each one as ok. Then you're ready for <a href="guide.html">your first loop</a>.</p>
+      <p>Each tool should say ok. Then you're ready for <a href="guide.html">your first loop</a>.</p>
 
       <h2>Updating</h2>
-      <p>Close any chat that uses unbake first, since Windows locks a running program. Then:</p>
-<pre><code>cd unbake
-git pull
-cargo build --release</code></pre>
+      <p>Run the same line again. It works even while Claude Code is open: the running copy is moved aside, and Claude Code uses the new one after a restart.</p>
+
+      <h2>Uninstalling</h2>
+<pre><code>claude mcp remove -s user unbake
+uv tool uninstall demucs
+uv tool uninstall basic-pitch
+Remove-Item -Recurse "$env:LOCALAPPDATA\Programs\unbake"</code></pre>
+      <p>Then remove <code>%LOCALAPPDATA%\Programs\unbake</code> from your PATH in Windows' environment variables settings. ffmpeg and uv stay, since other programs may use them.</p>
+
+      <h2>Install by hand</h2>
+      <p>To build unbake from source, for example to work on it:</p>
+<pre><code>winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+winget install Rustlang.Rustup
+git clone https://github.com/Qznad/unbake
+cd unbake
+cargo build --release
+.\target\release\unbake.exe setup</code></pre>
+      <p>The build tools and Rust take about 5 GB more. <code>setup</code> then installs the rest as above, and connects this build to Claude Code.</p>
 
       <h2>Linux and macOS</h2>
-      <p>The listening side and the note-for-note <code>rebuild</code> command run there too. Reference sounds, sample search and rendering look for FL Studio's Windows install, so they don't work there yet. macOS is untested. Help is welcome: see <a href="contribute.html">Contribute</a>.</p>
+      <p>The listening side and the note-for-note <code>rebuild</code> command run there too, built from source. Reference sounds, sample search and rendering look for FL Studio's Windows install, so they don't work there yet. On those systems, <code>setup</code> lists the install commands for you to run. macOS is untested. Help is welcome: see <a href="contribute.html">Contribute</a>.</p>
     </section>
   </main>
 

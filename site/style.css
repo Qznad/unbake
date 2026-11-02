@@ -660,6 +660,68 @@ figcaption {
   --c: var(--drums);
 }
 
+.start-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.clip-card {
+  --c: var(--accent);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.clip-card header {
+  padding: 7px 14px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  background: color-mix(in srgb, var(--c) 26%, var(--surface));
+  border-bottom: 2px solid var(--c);
+}
+
+.clip-card .body {
+  padding: 4px 16px 14px;
+}
+
+.clip-card .body > p {
+  margin: 12px 0 0;
+}
+
+.clip-card .code {
+  margin: 8px 0 0;
+}
+
+.clip-card pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.prompt {
+  white-space: pre-wrap;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 0.95rem;
+  border-left: 3px solid var(--c, var(--accent));
+}
+
+.prompt code {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.small {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.requirements {
+  margin-top: 18px;
+}
+
 .cta {
   text-align: center;
   padding: 64px 0 24px;

@@ -43,7 +43,7 @@ Build from this song's facts and FL's references. Projects you find on disk from
 
 ## First steps
 
-1. **Check the tools when something fails.** Call `doctor`. Its first line says which unbake build is answering (version and commit); a tool refusing a setting you expected to work usually means an older build. Each check says ok, warning or missing, what it is needed for, and the fix command. Show the fix and ask before running installs.
+1. **Check the tools when something fails.** Call `doctor`. Its first line says which unbake build is answering (version and commit); a tool refusing a setting you expected to work usually means an older build. Each check says ok, warning or missing, what it is needed for, and the fix command. Show the fix and ask before running installs. When several things are missing, `unbake setup` in a terminal installs them all: show the user the plan it prints, and run `unbake setup --yes` only once they agree.
 
 2. **Transcribe.** Call `transcribe` with the song and `out`, the rebuild folder. It takes about a minute with a GPU and a few minutes without, so say so first. A `stems` folder skips the separation.
 

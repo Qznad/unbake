@@ -28,8 +28,8 @@
         <h1>Turn a song into an FL Studio project you can learn from.</h1>
         <p class="lede">Give unbake an mp3. It splits the song into stems and works out its tempo, key, chords, drum groove, bass line and melody. Then an AI agent such as Claude Code builds an editable FL Studio project from what it heard: the song's parts, played on sounds from real producers' projects, with the song's own stems underneath to compare.</p>
         <div class="actions">
-          <a class="btn primary" href="install.html">Install</a>
-          <a class="btn" href="guide.html">Read the guide</a>
+          <a class="btn primary" href="#start">Get started</a>
+          <a class="btn" href="#example">See an example</a>
         </div>
 
         <figure class="playlist-figure">
@@ -62,6 +62,42 @@
           </div>
           <figcaption>The first 16 bars of <em>another_medium</em>, laid out like FL Studio's playlist: the song on top, the parts unbake found in it below, and the song's own stems underneath, muted, so you can solo them and compare.</figcaption>
         </figure>
+      </div>
+    </section>
+
+    <section id="start">
+      <div class="wrap">
+        <h2>Get started</h2>
+        <p class="section-intro">unbake runs on your computer, next to FL Studio. One line installs it. After that, you just talk to your agent.</p>
+        <div class="start-grid">
+          <article class="clip-card" style="--c: var(--drums)">
+            <header>1 · Install</header>
+            <div class="body">
+              <p>Paste this into Claude Code:</p>
+              <pre class="prompt"><code>Install unbake: run irm https://qznad.github.io/unbake/install.ps1 | iex in PowerShell, show me the setup plan it prints, and run it once I say yes.</code></pre>
+              <p>Or run it in PowerShell yourself:</p>
+              <pre><code>irm https://qznad.github.io/unbake/install.ps1 | iex</code></pre>
+              <p class="small">It lists what's missing and asks before installing anything. Then restart Claude Code so it loads unbake.</p>
+            </div>
+          </article>
+          <article class="clip-card" style="--c: var(--bass)">
+            <header>2 · Ask for a loop</header>
+            <div class="body">
+              <p>Give it a song you want to understand:</p>
+              <pre class="prompt"><code>Use unbake on C:/Music/my song.mp3. Start with a loop of the drop.</code></pre>
+              <p class="small">It tells you what it heard, then asks you a few things: the genre, which part of the song, which drum sounds are closest.</p>
+            </div>
+          </article>
+          <article class="clip-card" style="--c: var(--chords)">
+            <header>3 · Listen in FL Studio</header>
+            <div class="body">
+              <p>Open the project it writes. Play it, then unmute a stem track to hear the song's own part.</p>
+              <p>Tell the agent what's weakest, or change it yourself and save. It builds the next version on yours, and then the whole song, one section at a time.</p>
+              <p class="small"><a href="guide.html">The guide</a> walks through every step.</p>
+            </div>
+          </article>
+        </div>
+        <p class="small requirements">Needs Windows 10 or 11, FL Studio 2024 or later, and Claude Code or another agent that uses MCP tools. <a href="install.html">Install details</a></p>
       </div>
     </section>
 
@@ -181,7 +217,7 @@
         <h2>Try it on a song you love</h2>
         <p class="section-intro" style="margin:0 auto 20px">You need Windows, FL Studio 2024 or later, and an AI agent such as Claude Code.</p>
         <div class="actions">
-          <a class="btn primary" href="install.html">Install</a>
+          <a class="btn primary" href="#start">Get started</a>
           <a class="btn" href="guide.html">Read the guide</a>
           <a class="btn" href="contribute.html">Help build it</a>
         </div>
