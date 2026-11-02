@@ -2,148 +2,22 @@
 
 Turn a song into an FL Studio project you can learn from.
 
-Give unbake an mp3 or wav. It splits the song into stems and listens for the tempo, key, sections, chords, drum groove, bass line and melody. Then, with an AI agent such as Claude Code, it builds an FL Studio project from what it heard: first a loop of the song's main section, then the whole song, one section at a time. The sounds and effects are copied from real producers' projects that come with FL Studio. The song's own stems sit underneath as muted audio clips, so you can solo them and compare part by part.
+unbake listens to a song for its tempo, key, chords, drums, bass and melody. Then an AI agent such as Claude Code builds an editable FL Studio project from what it heard, using sounds from FL Studio's own demo projects, with the song's stems underneath so you can compare.
 
-The result is not a copy of the song. It plays the song's chords, bass and groove in a clean, editable project, and it tells you what came from the song and what didn't. Your ears decide whether it's close.
+> **Early builds (version 0.1).** Windows only. The lead melody is often wrong, and you will run into bugs.
 
-> **Status:** early builds (version 0.1), with a long way to go. The FL Studio side runs on Windows only, and it has been tested on electronic instrumentals. It does well on some songs and badly on others: see [What works and what doesn't](#what-works-and-what-doesnt).
-
-## What a project contains
-
-- the song's tempo, and markers for its sections (intro, drop, break…)
-- patterns for each part and section (kick, snare, hats, bass, chords, lead), with names you can read
-- channels copied from FL Studio's demo projects, with their plugin, preset and mixer effects
-- the song's drums, bass, other and vocals stems as muted audio clips on their own tracks
-- the agent's notes on each choice: the chord names, where a part repeats, what it wasn't sure about
-
-## How it works
-
-1. **Split.** [Demucs](https://github.com/facebookresearch/demucs) separates the song into drums, bass, other and vocals.
-2. **Listen.** unbake finds the tempo and first downbeat, the key, the sections and the drum hits. [Basic Pitch](https://github.com/spotify/basic-pitch) turns the bass and other stems into notes. From those, unbake names the chords (Am9, Bbmaj7, Cm/Eb…), finds which bars repeat, and offers several melody candidates. Every result is a *finding*: a value with a confidence, the alternatives that came close, and what unbake couldn't tell.
-3. **Build.** The agent picks a reference project from FL Studio's demo songs in the same genre, copies its sounds and effect chains, and writes patterns from the song's facts. Kick, snare and hat samples are chosen by how close they sound to the song's own hits, alone or as two layered samples. unbake writes the `.flp` file itself, so FL Studio doesn't need to be open.
-4. **Check and improve.** unbake compares every channel's notes with what the song plays in the same bars, and checks that each drum sample sounds like the song's. Then the agent works in a loop:
-   - render the project through FL Studio's command line
-   - compare each part's sound with its stem: rhythm, notes, tone, brightness, stereo width, and how loud it sits in the mix
-   - change one thing in the part that's furthest off, such as its volume, a sample, a preset or an effect chain
-   - render again, and keep the change only if that part got closer
-
-   It stops working on a part once that part stops getting closer.
-5. **You listen and steer.** By default the agent stops to ask you at set points: the genre and reference, after each loop, and before the full song. You can also ask it to work on its own from start to finish and report every choice it made.
-
-## Install (Windows)
-
-You need Windows 10 or 11, FL Studio 2024 or later (tested with FL Studio 25.1), and an agent that uses MCP tools, such as [Claude Code](https://claude.com/claude-code). An NVIDIA GPU is optional and makes Demucs about 4 times faster.
+## Install
 
 Paste this into Claude Code:
 
 > Install unbake: run `irm https://qznad.github.io/unbake/install.ps1 | iex` in PowerShell, show me the setup plan it prints, and run it once I say yes.
 
-Or run it in PowerShell yourself:
+Then reload Claude Code and ask:
 
-```powershell
-irm https://qznad.github.io/unbake/install.ps1 | iex
-```
+> Use unbake on `C:/Music/my song.mp3`. Start with a loop of the drop.
 
-The script downloads the latest `unbake.exe` from [Releases](https://github.com/Qznad/unbake/releases) into `%LOCALAPPDATA%\Programs\unbake`, checks it against its published checksum, and adds it to your PATH. Then it runs `unbake setup`. Setup lists what's missing (ffmpeg, uv, Demucs, Basic Pitch, and the connection to Claude Code) and asks before installing anything. An agent shows you that plan and runs `unbake setup --yes` once you agree. Restart Claude Code afterwards so it loads unbake. To update, run the same line again.
+## More
 
-To build it yourself instead:
+The guide, an example and the details are on the website: **https://qznad.github.io/unbake**
 
-```powershell
-winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
-winget install Rustlang.Rustup
-git clone https://github.com/Qznad/unbake
-cd unbake
-cargo build --release
-.\target\release\unbake.exe setup
-```
-
-`unbake doctor` checks each tool at any time. It says what each one is needed for and how to fix it.
-
-**On Linux and macOS:** unbake started on Linux, and the listening side and `rebuild` run there too. Reference sounds, sample search and rendering look for FL Studio's Windows install, so they don't work there yet. macOS is untested.
-
-## Use it with an agent
-
-unbake runs as an [MCP](https://modelcontextprotocol.io) server, so an agent such as [Claude Code](https://claude.com/claude-code) can call its tools. `unbake setup` connects it for you. To connect it by hand, add it to a `.mcp.json` file in the folder you work from:
-
-```json
-{
-  "mcpServers": {
-    "unbake": {
-      "command": "C:/path/to/unbake/target/release/unbake.exe",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-Use forward slashes in the path. You can also run `claude mcp add unbake -- C:/path/to/unbake.exe mcp`. When the agent connects, the server sends it the whole workflow ([skills/unbake/SKILL.md](skills/unbake/SKILL.md)), so there's nothing else to install. Then ask, for example:
-
-> Use unbake on `C:/Music/my song.mp3`, in `C:/Users/me/Documents/Image-Line/FL Studio/Projects/unbake/my song`. Start with a loop of the drop.
-
-Save projects under `Documents/Image-Line/FL Studio/Projects/unbake/`, where FL Studio looks for their samples.
-
-To watch the agent build the whole song without stopping you, ask for it in so many words, for example "work on your own from scratch without stopping me". It then makes every choice itself and runs the improve loop after the main loop, each section and the whole song, until they stop getting closer. At the end it reports every choice it made, and what got closer and what didn't. Keep FL Studio closed during the run, because the agent renders through it.
-
-## Use it on its own
-
-```powershell
-.\target\release\unbake.exe rebuild "C:\Music\my song.mp3" -o "$HOME\Documents\Image-Line\FL Studio\Projects\unbake\my song"
-```
-
-`rebuild` needs no agent. It writes a note-for-note project from what it heard: one pattern per part covering the whole song, sounds cut from the stems, MIDI files and a `report.html`. It's more literal and messier than an agent's project. To go step by step instead, run `transcribe`, then `write`.
-
-| | Commands |
-|---|---|
-| Listen | `transcribe`, `analyze`, `split`, `info`, `overview`, `timeline`, `harmony`, `grid`, `parts`, `inspect`, `candidates`, `choose`, `piano-roll`, `sounds-like`, `clues` |
-| Build | `compose` (a project from a JSON description), `suggest-sounds` (FL's kicks, snares and hats that sound closest to the song's own), `write`, `rebuild` |
-| Check | `check`, `render`, `compare-render`, `eval` |
-| Read FL Studio projects | `flp-info`, `pattern`, `playlist`, `references`, `samples` |
-| Setup | `setup`, `doctor`, `mcp` |
-
-`unbake <command> --help` explains each one.
-
-## What works and what doesn't
-
-Works well:
-
-- tempo, key and sections on most songs. Half or double tempo is sometimes a coin flip, and unbake says so.
-- chord progressions, drum grooves and bass lines
-- projects that open cleanly in FL Studio, with every sample found
-
-Hard:
-
-- **The lead melody.** The "other" stem mixes several instruments, and Basic Pitch hears maybe half of a busy lead. unbake offers candidates and the agent cleans them up, but the lead is often wrong.
-- **Effects.** Reverb, delay and sidechain are read as clues ("these notes come back a dotted 8th later and quieter: a delay?"), not copied. Filter sweeps and fades need automation clips, which unbake can't write yet.
-- **The range of music.** It assumes 4/4 on a straight 16th-note grid, and it has been tuned on a handful of electronic instrumentals. Vocals are separated but barely used.
-- **It can't hear.** Its numbers say whether a part got closer to its stem, not whether it sounds good. You decide that.
-
-## Contributing
-
-Ideas and help are welcome, especially on:
-
-- melody transcription from a mixed stem
-- automation clips (volume fades, filter sweeps) in `compose`
-- the FL Studio side on macOS, where FL's folders differ
-- songs in other genres, or with vocals, swing or other meters
-
-`cargo test`, `cargo clippy` (with no warnings) and `cargo fmt --check` should pass. Each function has one short lowercase comment above it, and there are no other comments. The test songs aren't in the repo because they're copyrighted, so the tests build their own audio and projects.
-
-While an agent runs the MCP server, Windows locks its exe and `cargo build` fails. To avoid that, point `.mcp.json` at a copy of the exe.
-
-## A note on copyright
-
-unbake is for studying music. The projects it writes hold the song's own stems, so only share or release what you have the rights to. The reference sounds come from your own FL Studio install, and nothing from Image-Line ships with unbake.
-
-## License
-
-unbake is under the [MIT license](LICENSE). Contributions are accepted under the same license.
-
-## Credits
-
-- [Demucs](https://github.com/facebookresearch/demucs) (MIT), for the stems
-- [Basic Pitch](https://github.com/spotify/basic-pitch) (Apache-2.0), for the notes
-- [PyFLP](https://github.com/demberto/PyFLP), whose sample projects helped check the FLP reader and writer
-- [REA](https://github.com/morluto/rea), whose design inspired unbake's findings and its agent skill
-- [FL Studio](https://www.image-line.com/) by Image-Line, whose demo projects by real producers are the reference sounds
-
-unbake is made by [Qznad](https://github.com/Qznad), AI-assisted.
+Projects hold the song's own stems, so only share what you have the rights to. MIT license, AI-assisted, built on [Demucs](https://github.com/facebookresearch/demucs) and [Basic Pitch](https://github.com/spotify/basic-pitch).
