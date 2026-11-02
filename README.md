@@ -134,6 +134,10 @@ While an agent runs the MCP server, Windows locks its exe and `cargo build` fail
 
 unbake is for studying music. The projects it writes hold the song's own stems, so only share or release what you have the rights to. The reference sounds come from your own FL Studio install, and nothing from Image-Line ships with unbake.
 
+## License
+
+unbake is under the [MIT license](LICENSE). Contributions are accepted under the same license.
+
 ## Credits
 
 - [Demucs](https://github.com/facebookresearch/demucs) (MIT), for the stems
