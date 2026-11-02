@@ -142,6 +142,7 @@ pub fn missing_samples(project: &Project) -> Vec<String> {
             path.is_absolute() && !path.exists()
         })
         .collect();
+    missing.sort();
     missing.dedup();
     missing
 }
@@ -315,22 +316,28 @@ mod tests {
         assert_eq!(Stem::parse("lead"), None);
     }
 
-    // a solo copy keeps only its stem's notes, and drops the other stems' notes from a shared pattern
+    // a solo copy keeps only its stem's notes, and drops the other stems' notes from a shared pattern, and a missing sample is named once
     #[test]
     fn solo_keeps_one_stem() {
+        let missing = std::env::temp_dir()
+            .join("unbake_no_such_samples")
+            .to_string_lossy()
+            .replace('\\', "/");
         let spec: compose::Loop = serde_json::from_str(
-            r#"{
+            &r#"{
                 "name": "solo test", "tempo": 140, "bars": 1,
                 "channels": [
-                    { "name": "Kick", "sample": "C:/kick.wav" },
-                    { "name": "Bass", "sample": "C:/bass.wav" },
-                    { "name": "Lead", "sample": "C:/lead.wav" }
+                    { "name": "Kick", "sample": "MISSING/kick.wav" },
+                    { "name": "Bass", "sample": "MISSING/bass.wav" },
+                    { "name": "Lead", "sample": "MISSING/lead.wav" },
+                    { "name": "Lead 2", "sample": "MISSING/kick.wav" }
                 ],
                 "patterns": [
                     { "name": "All", "grids": [ { "channel": "Kick", "hits": "x...x...x...x..." } ],
                       "notes": [ { "channel": "Bass", "key": "C2", "steps": 4 }, { "channel": "Lead", "key": "C5", "steps": 2 } ] }
                 ]
-            }"#,
+            }"#
+            .replace("MISSING", &missing),
         )
         .unwrap();
         let dir = std::env::temp_dir().join("unbake_solo_test");
