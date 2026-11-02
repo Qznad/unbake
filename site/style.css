@@ -667,6 +667,37 @@ figcaption {
   align-items: start;
 }
 
+.loop-row {
+  display: grid;
+  grid-template-columns: minmax(0, 400px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.loop-notes {
+  display: grid;
+  gap: 16px;
+}
+
+.shot {
+  margin: 0;
+}
+
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+@media (max-width: 720px) {
+  .loop-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .clip-card {
   --c: var(--accent);
   background: var(--surface);
