@@ -11,3 +11,4 @@ docs/
 *.flp
 test_audio/
 !assets/*.flp
+!site/media/*.mp3

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>unbake guide</title>
+  <meta name="description" content="From a song to a loop to a whole FL Studio project with unbake and an AI agent: what to ask, what it asks you, and how to listen.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="wordmark" href="./"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>unbake</a>
+      <nav aria-label="Main">
+        <a href="./#example">Example</a>
+        <a href="guide.html" aria-current="page">Guide</a>
+        <a href="install.html">Install</a>
+        <a href="contribute.html">Contribute</a>
+        <a href="https://github.com/Qznad/unbake">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap narrow doc">
+    <section>
+      <p class="eyebrow">Guide</p>
+      <h1>From a song to a loop to a whole project</h1>
+      <p class="lede">You talk to the agent, the agent uses unbake, and you listen in FL Studio. The agent stops at a few points to ask you, because your ears are the test. Here is what happens at each step.</p>
+
+      <nav class="toc" aria-label="On this page">
+        <ol>
+          <li><a href="#start">Ask for a loop</a></li>
+          <li><a href="#heard">Answer what it asks</a></li>
+          <li><a href="#listen">Listen to the loop</a></li>
+          <li><a href="#plan">Agree on the section plan</a></li>
+          <li><a href="#song">Build the whole song</a></li>
+          <li><a href="#alone">Let it work on its own</a></li>
+          <li><a href="#tips">Tips</a></li>
+        </ol>
+      </nav>
+
+      <p>If unbake isn't installed yet, start with <a href="install.html">Install</a>.</p>
+
+      <h2 id="start">1. Ask for a loop</h2>
+      <p>Give the agent the song and a folder for the project. Use a folder under <code>Documents\Image-Line\FL Studio\Projects\unbake</code>, where FL Studio looks for the project's samples, and a new folder for each song.</p>
+      <blockquote>Use unbake on <code>C:/Music/my song.mp3</code>, in <code>C:/Users/me/Documents/Image-Line/FL Studio/Projects/unbake/my song</code>. Start with a loop of the drop, then the whole song.</blockquote>
+      <p>unbake splits the song into stems and listens to it. That takes about a minute with an NVIDIA graphics card, and a few minutes without.</p>
+
+      <h2 id="heard">2. Answer what it asks</h2>
+      <p>The agent tells you what unbake heard: tempo, key, length, sections, chords. It also says what unbake <em>isn't</em> sure about. Then it stops and asks you a few things before building anything:</p>
+      <div class="ask"><b>Genre.</b> It suggests one from the tempo and the drums. This decides which FL Studio demo project the sounds come from.</div>
+      <div class="ask"><b>Tempo</b>, when unbake can't tell a tempo from its double or half. Pick the one that feels like the beat when you nod along.</div>
+      <div class="ask"><b>Which part of the song the loop comes from.</b> Usually the fullest drop or chorus.</div>
+      <div class="ask"><b>The reference project and its sounds.</b> Which channels to borrow for the bass, chords and lead, and why.</div>
+      <div class="ask"><b>Kick, snare and hat.</b> unbake compares FL Studio's drum samples with the song's own hits and writes listening clips to a folder in your project. Each set starts with the song's own hit. Play them and pick the closest. Layers of two samples are offered too.</div>
+
+      <h2 id="listen">3. Listen to the loop</h2>
+      <p>Before you hear it, the agent renders the loop through FL Studio and compares each part with the song's stems, then fixes what's far off. FL Studio must be closed while it renders, so it asks you to save and close it first.</p>
+      <p>Then it tells you which <code>.flp</code> to open, and asks three things:</p>
+      <ol>
+        <li>Can you hear every part?</li>
+        <li>How does it feel overall?</li>
+        <li>Which part is weakest?</li>
+      </ol>
+      <p>To compare with the song, unmute one of the stem tracks at the bottom of the playlist (Drums, Bass, Other, Vocals stem). They're the song's own parts, cut to the same bars.</p>
+      <p>You can also change things yourself in FL Studio: notes, sounds, effects, mutes. <strong>Save before you answer.</strong> The agent reads your saved project and builds the next version on it, as v2, v3 and so on, so you can compare.</p>
+
+      <h2 id="plan">4. Agree on the section plan</h2>
+      <p>Once you say the loop works, the agent maps the whole song, part by part, and shows you a plan like this:</p>
+      <div class="table-box">
+        <table>
+          <thead><tr><th>Section</th><th>Bars</th><th>Drums</th><th>Bass</th><th>Lead</th></tr></thead>
+          <tbody>
+            <tr><td>Intro</td><td>1–8</td><td>ask: behind a filter</td><td>silent</td><td>ask: heard once</td></tr>
+            <tr><td>Drop 1</td><td>9–40</td><td>reuse the loop's</td><td>reuse</td><td>build the song's own lines</td></tr>
+            <tr><td>Break</td><td>45–48</td><td>silent</td><td>reuse</td><td>build</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><b>Reuse</b> means that part repeats something already built. <b>Build</b> means it's new. <b>Ask</b> means unbake heard it badly, for example a filtered intro or a melody heard only once, so the agent asks you what to do. Every cell says where its evidence comes from.</p>
+
+      <h2 id="song">5. Build the whole song</h2>
+      <p>The agent builds each distinct section as its own short loop, on the sounds of your saved main loop, and you listen to each one the same way. When every section works, it combines them into one project with section markers and the song's stems from bar 1. Then you listen to the whole thing and say what's wrong, section by section.</p>
+      <p>At the end it explains the song as a short lesson: the key, the chord progression in plain names, what the bass, drums and melody do, and which parts came from the song and which from the reference.</p>
+
+      <h2 id="alone">6. Let it work on its own</h2>
+      <p>To watch it build a whole song without stopping to ask you, say so in so many words:</p>
+      <blockquote>Work on your own from scratch without stopping me.</blockquote>
+      <p>It then makes every choice itself, from the evidence, and renders and compares after each step until the parts stop getting closer. Keep FL Studio closed for the whole run. At the end it reports which project to open, every choice it made and how sure it was, what got closer and what didn't, and which parts you should check by ear. You can redo any of those choices with it afterwards.</p>
+
+      <h2 id="tips">7. Tips</h2>
+      <ul>
+        <li><strong>Save in FL Studio before you reply.</strong> The agent always builds on your latest saved project.</li>
+        <li><strong>Close FL Studio when the agent renders.</strong> It can't render while FL Studio is open, and it will ask you.</li>
+        <li><strong>Give each song its own folder.</strong> A new run in an old folder can replace projects with the same names.</li>
+        <li><strong>Expect the lead to need your ears.</strong> The "other" stem mixes several instruments, so the melody is the hardest part. Leads unbake isn't sure about go on a muted track for you to check against the Other stem.</li>
+        <li><strong>Quiet or filtered intros</strong> are heard badly, because a low-pass filter hides most of the sound. unbake can't write automation clips yet, so the agent will tell you how to draw the filter sweep yourself.</li>
+        <li><strong>Numbers aren't taste.</strong> The comparisons say whether a part got closer to the song, not whether it sounds good. You decide that.</li>
+      </ul>
+
+      <h2>Without an agent</h2>
+      <p><code>rebuild</code> needs no agent. It writes a note-for-note project straight from what unbake heard: one pattern per part over the whole song, sounds cut from the stems, MIDI files and a report. It's more literal and messier than an agent's project.</p>
+<pre><code>.\target\release\unbake.exe rebuild "C:\Music\my song.mp3" -o "$HOME\Documents\Image-Line\FL Studio\Projects\unbake\my song"</code></pre>
+      <p>Every command has <code>--help</code>. The <a href="https://github.com/Qznad/unbake#use-it-on-its-own">README</a> lists them all.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>unbake is for studying music. Its projects hold the song's own stems, so only share or release what you have the rights to.</p>
+      <p>Made by <a href="https://github.com/Qznad">Qznad</a>, AI-assisted.</p>
+    </div>
+  </footer>
+  <script src="site.js"></script>
+</body>
+</html>

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>unbake: turn a song into an FL Studio project</title>
+  <meta name="description" content="unbake listens to a song and, with an AI agent, builds an editable FL Studio project of its chords, bass and groove, with the song's own stems underneath to compare.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="wordmark" href="./"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>unbake</a>
+      <nav aria-label="Main">
+        <a href="#example">Example</a>
+        <a href="guide.html">Guide</a>
+        <a href="install.html">Install</a>
+        <a href="contribute.html">Contribute</a>
+        <a href="https://github.com/Qznad/unbake">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="wrap">
+        <p class="eyebrow">For FL Studio on Windows · early and open source</p>
+        <h1>Turn a song into an FL Studio project you can learn from.</h1>
+        <p class="lede">Give unbake an mp3. It splits the song into stems and works out its tempo, key, chords, drum groove, bass line and melody. Then an AI agent such as Claude Code builds an editable FL Studio project from what it heard: the song's parts, played on sounds from real producers' projects, with the song's own stems underneath to compare.</p>
+        <div class="actions">
+          <a class="btn primary" href="install.html">Install</a>
+          <a class="btn" href="guide.html">Read the guide</a>
+        </div>
+
+        <figure class="playlist-figure">
+          <div class="scroll-x">
+            <div class="playlist" role="img" aria-label="FL Studio playlist: the song's waveform on top; below it Kick and Snare from bar 13, Bass from bar 5, chords Gm11, B flat maj9 and Am11, Lead A from bar 5, and four muted stem tracks.">
+              <span class="pl-name"></span>
+              <div class="pl-lane pl-ruler"><span style="grid-column:1">1</span><span style="grid-column:5">5</span><span style="grid-column:9">9</span><span style="grid-column:13">13</span></div>
+              <span class="pl-name"></span>
+              <div class="pl-lane pl-markers"><span class="marker" style="--at:1;--len:4">Intro</span><span class="marker" style="--at:5;--len:8">Break</span><span class="marker" style="--at:13;--len:4">Drop</span></div>
+              <span class="pl-name">Your song</span>
+              <div class="pl-lane pl-song"><svg class="wave" viewBox="0 0 640 48" preserveAspectRatio="none" aria-hidden="true"><rect x="0.75" y="19.2" width="3.5" height="9.6" rx="1"/><rect x="5.75" y="19.7" width="3.5" height="8.7" rx="1"/><rect x="10.75" y="20.1" width="3.5" height="7.9" rx="1"/><rect x="15.75" y="20.3" width="3.5" height="7.3" rx="1"/><rect x="20.75" y="18.6" width="3.5" height="10.9" rx="1"/><rect x="25.75" y="19.3" width="3.5" height="9.3" rx="1"/><rect x="30.75" y="19.8" width="3.5" height="8.5" rx="1"/><rect x="35.75" y="19.2" width="3.5" height="9.7" rx="1"/><rect x="40.75" y="18.1" width="3.5" height="11.9" rx="1"/><rect x="45.75" y="19.2" width="3.5" height="9.6" rx="1"/><rect x="50.75" y="19.9" width="3.5" height="8.2" rx="1"/><rect x="55.75" y="19.6" width="3.5" height="8.8" rx="1"/><rect x="60.75" y="19.7" width="3.5" height="8.6" rx="1"/><rect x="65.75" y="20.0" width="3.5" height="7.9" rx="1"/><rect x="70.75" y="20.7" width="3.5" height="6.7" rx="1"/><rect x="75.75" y="19.9" width="3.5" height="8.2" rx="1"/><rect x="80.75" y="18.9" width="3.5" height="10.3" rx="1"/><rect x="85.75" y="18.6" width="3.5" height="10.7" rx="1"/><rect x="90.75" y="19.9" width="3.5" height="8.2" rx="1"/><rect x="95.75" y="19.4" width="3.5" height="9.2" rx="1"/><rect x="100.75" y="18.5" width="3.5" height="10.9" rx="1"/><rect x="105.75" y="19.7" width="3.5" height="8.6" rx="1"/><rect x="110.75" y="19.4" width="3.5" height="9.3" rx="1"/><rect x="115.75" y="19.1" width="3.5" height="9.8" rx="1"/><rect x="120.75" y="18.7" width="3.5" height="10.5" rx="1"/><rect x="125.75" y="19.5" width="3.5" height="8.9" rx="1"/><rect x="130.75" y="19.9" width="3.5" height="8.2" rx="1"/><rect x="135.75" y="19.9" width="3.5" height="8.3" rx="1"/><rect x="140.75" y="19.7" width="3.5" height="8.6" rx="1"/><rect x="145.75" y="20.6" width="3.5" height="6.8" rx="1"/><rect x="150.75" y="20.8" width="3.5" height="6.5" rx="1"/><rect x="155.75" y="20.3" width="3.5" height="7.4" rx="1"/><rect x="160.75" y="10.7" width="3.5" height="26.7" rx="1"/><rect x="165.75" y="8.5" width="3.5" height="31.0" rx="1"/><rect x="170.75" y="8.8" width="3.5" height="30.4" rx="1"/><rect x="175.75" y="4.2" width="3.5" height="39.7" rx="1"/><rect x="180.75" y="2.9" width="3.5" height="42.2" rx="1"/><rect x="185.75" y="6.9" width="3.5" height="34.2" rx="1"/><rect x="190.75" y="8.7" width="3.5" height="30.6" rx="1"/><rect x="195.75" y="7.2" width="3.5" height="33.6" rx="1"/><rect x="200.75" y="8.9" width="3.5" height="30.2" rx="1"/><rect x="205.75" y="9.9" width="3.5" height="28.2" rx="1"/><rect x="210.75" y="10.9" width="3.5" height="26.2" rx="1"/><rect x="215.75" y="8.8" width="3.5" height="30.3" rx="1"/><rect x="220.75" y="5.6" width="3.5" height="36.7" rx="1"/><rect x="225.75" y="7.7" width="3.5" height="32.7" rx="1"/><rect x="230.75" y="9.1" width="3.5" height="29.8" rx="1"/><rect x="235.75" y="9.2" width="3.5" height="29.7" rx="1"/><rect x="240.75" y="8.1" width="3.5" height="31.7" rx="1"/><rect x="245.75" y="7.0" width="3.5" height="33.9" rx="1"/><rect x="250.75" y="7.6" width="3.5" height="32.8" rx="1"/><rect x="255.75" y="2.0" width="3.5" height="44.0" rx="1"/><rect x="260.75" y="2.7" width="3.5" height="42.7" rx="1"/><rect x="265.75" y="7.4" width="3.5" height="33.2" rx="1"/><rect x="270.75" y="8.0" width="3.5" height="32.0" rx="1"/><rect x="275.75" y="7.5" width="3.5" height="33.1" rx="1"/><rect x="280.75" y="11.0" width="3.5" height="26.0" rx="1"/><rect x="285.75" y="9.8" width="3.5" height="28.4" rx="1"/><rect x="290.75" y="8.7" width="3.5" height="30.6" rx="1"/><rect x="295.75" y="5.3" width="3.5" height="37.5" rx="1"/><rect x="300.75" y="10.3" width="3.5" height="27.3" rx="1"/><rect x="305.75" y="14.5" width="3.5" height="19.1" rx="1"/><rect x="310.75" y="12.0" width="3.5" height="24.0" rx="1"/><rect x="315.75" y="11.7" width="3.5" height="24.6" rx="1"/><rect x="320.75" y="12.1" width="3.5" height="23.8" rx="1"/><rect x="325.75" y="14.9" width="3.5" height="18.1" rx="1"/><rect x="330.75" y="16.5" width="3.5" height="15.0" rx="1"/><rect x="335.75" y="16.5" width="3.5" height="15.1" rx="1"/><rect x="340.75" y="17.5" width="3.5" height="13.0" rx="1"/><rect x="345.75" y="17.9" width="3.5" height="12.2" rx="1"/><rect x="350.75" y="18.4" width="3.5" height="11.3" rx="1"/><rect x="355.75" y="16.6" width="3.5" height="14.9" rx="1"/><rect x="360.75" y="14.8" width="3.5" height="18.3" rx="1"/><rect x="365.75" y="16.5" width="3.5" height="15.0" rx="1"/><rect x="370.75" y="17.7" width="3.5" height="12.6" rx="1"/><rect x="375.75" y="17.4" width="3.5" height="13.3" rx="1"/><rect x="380.75" y="17.0" width="3.5" height="14.0" rx="1"/><rect x="385.75" y="18.1" width="3.5" height="11.7" rx="1"/><rect x="390.75" y="17.3" width="3.5" height="13.3" rx="1"/><rect x="395.75" y="14.3" width="3.5" height="19.5" rx="1"/><rect x="400.75" y="15.2" width="3.5" height="17.5" rx="1"/><rect x="405.75" y="17.5" width="3.5" height="13.0" rx="1"/><rect x="410.75" y="16.6" width="3.5" height="14.7" rx="1"/><rect x="415.75" y="17.3" width="3.5" height="13.3" rx="1"/><rect x="420.75" y="16.5" width="3.5" height="15.0" rx="1"/><rect x="425.75" y="16.8" width="3.5" height="14.4" rx="1"/><rect x="430.75" y="17.3" width="3.5" height="13.3" rx="1"/><rect x="435.75" y="16.8" width="3.5" height="14.3" rx="1"/><rect x="440.75" y="17.6" width="3.5" height="12.9" rx="1"/><rect x="445.75" y="17.0" width="3.5" height="13.9" rx="1"/><rect x="450.75" y="16.5" width="3.5" height="14.9" rx="1"/><rect x="455.75" y="17.3" width="3.5" height="13.5" rx="1"/><rect x="460.75" y="17.3" width="3.5" height="13.4" rx="1"/><rect x="465.75" y="18.2" width="3.5" height="11.6" rx="1"/><rect x="470.75" y="17.8" width="3.5" height="12.5" rx="1"/><rect x="475.75" y="15.5" width="3.5" height="17.0" rx="1"/><rect x="480.75" y="8.2" width="3.5" height="31.6" rx="1"/><rect x="485.75" y="9.1" width="3.5" height="29.7" rx="1"/><rect x="490.75" y="10.6" width="3.5" height="26.8" rx="1"/><rect x="495.75" y="8.8" width="3.5" height="30.4" rx="1"/><rect x="500.75" y="5.3" width="3.5" height="37.4" rx="1"/><rect x="505.75" y="8.7" width="3.5" height="30.5" rx="1"/><rect x="510.75" y="10.4" width="3.5" height="27.2" rx="1"/><rect x="515.75" y="7.9" width="3.5" height="32.2" rx="1"/><rect x="520.75" y="6.8" width="3.5" height="34.4" rx="1"/><rect x="525.75" y="9.4" width="3.5" height="29.1" rx="1"/><rect x="530.75" y="9.9" width="3.5" height="28.2" rx="1"/><rect x="535.75" y="3.8" width="3.5" height="40.4" rx="1"/><rect x="540.75" y="2.5" width="3.5" height="42.9" rx="1"/><rect x="545.75" y="6.8" width="3.5" height="34.4" rx="1"/><rect x="550.75" y="9.1" width="3.5" height="29.9" rx="1"/><rect x="555.75" y="7.2" width="3.5" height="33.6" rx="1"/><rect x="560.75" y="8.1" width="3.5" height="31.9" rx="1"/><rect x="565.75" y="8.0" width="3.5" height="32.0" rx="1"/><rect x="570.75" y="7.0" width="3.5" height="34.1" rx="1"/><rect x="575.75" y="5.4" width="3.5" height="37.2" rx="1"/><rect x="580.75" y="6.8" width="3.5" height="34.4" rx="1"/><rect x="585.75" y="7.8" width="3.5" height="32.3" rx="1"/><rect x="590.75" y="6.6" width="3.5" height="34.9" rx="1"/><rect x="595.75" y="2.0" width="3.5" height="43.9" rx="1"/><rect x="600.75" y="11.2" width="3.5" height="25.6" rx="1"/><rect x="605.75" y="8.7" width="3.5" height="30.5" rx="1"/><rect x="610.75" y="5.3" width="3.5" height="37.4" rx="1"/><rect x="615.75" y="2.0" width="3.5" height="44.0" rx="1"/><rect x="620.75" y="6.2" width="3.5" height="35.5" rx="1"/><rect x="625.75" y="9.0" width="3.5" height="30.0" rx="1"/><rect x="630.75" y="9.7" width="3.5" height="28.7" rx="1"/><rect x="635.75" y="6.7" width="3.5" height="34.6" rx="1"/></svg></div>
+              <span class="pl-gap">unbaked into</span>
+              <span class="pl-name">Kick</span>
+              <div class="pl-lane"><span class="clip drums" style="--at:13;--len:4">Kick</span></div>
+              <span class="pl-name">Snare</span>
+              <div class="pl-lane"><span class="clip drums" style="--at:13;--len:4">Snare</span></div>
+              <span class="pl-name">Bass</span>
+              <div class="pl-lane"><span class="clip bass" style="--at:5;--len:8">Bass A</span><span class="clip bass" style="--at:13;--len:4">Bass A</span></div>
+              <span class="pl-name">Chords</span>
+              <div class="pl-lane"><span class="clip chords" style="--at:1;--len:4">Intro</span><span class="clip chords" style="--at:5;--len:2">Gm11</span><span class="clip chords" style="--at:7;--len:2">B♭maj9</span><span class="clip chords" style="--at:9;--len:4">Am11</span><span class="clip chords" style="--at:13;--len:2">Gm11</span><span class="clip chords" style="--at:15;--len:2">B♭maj13</span></div>
+              <span class="pl-name">Lead</span>
+              <div class="pl-lane"><span class="clip lead" style="--at:5;--len:8">Lead A</span><span class="clip lead" style="--at:13;--len:4">Lead A</span></div>
+              <span class="pl-name muted-name">Drums stem</span>
+              <div class="pl-lane"><span class="clip stem" style="--at:1;--len:16">Drums stem.wav · muted</span></div>
+              <span class="pl-name muted-name">Bass stem</span>
+              <div class="pl-lane"><span class="clip stem" style="--at:1;--len:16">Bass stem.wav · muted</span></div>
+              <span class="pl-name muted-name">Other stem</span>
+              <div class="pl-lane"><span class="clip stem" style="--at:1;--len:16">Other stem.wav · muted</span></div>
+            </div>
+          </div>
+          <figcaption>The first 16 bars of <em>another_medium</em>, laid out like FL Studio's playlist: the song on top, the parts unbake found in it below, and the song's own stems underneath, muted, so you can solo them and compare.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="example">
+      <div class="wrap">
+        <h2>An example: another_medium</h2>
+        <p class="section-intro"><em>another_medium</em> is a chiptune-style electro instrumental by Qznad, who makes unbake. Here is what unbake heard in it, and what an agent built from that.</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3 style="margin-top:0">What unbake heard</h3>
+            <dl class="facts">
+              <dt>Tempo</dt>
+              <dd>120 bpm<small>Only 25% sure: 240 bpm fits 75% as well, the same groove counted twice as fast. The song was actually made at 240. unbake says when it's unsure, and the agent asks you.</small></dd>
+              <dt>Key</dt>
+              <dd>A minor</dd>
+              <dt>Sections</dt>
+              <dd>Intro 1–4, break 5–12, drop from bar 13</dd>
+              <dt>Chords</dt>
+              <dd>An 8-bar cycle from bar 5 to bar 76: Gm11 for 2 bars, B♭maj9 for 2, Am for 4</dd>
+              <dt>Drums</dt>
+              <dd>Kick and snare from bar 13, hats from bar 21</dd>
+              <dt>Lead</dt>
+              <dd>An 8th-note tune where every note gets a quick answer a 16th later: an octave lower over Gm11 and B♭maj9, a fifth lower over Am</dd>
+            </dl>
+          </div>
+
+          <div class="card">
+            <h3 style="margin-top:0">Listen</h3>
+            <div class="player">
+              <p>The song</p>
+              <audio controls preload="metadata" src="media/another-medium-song.mp3" data-pending="Recording coming soon."></audio>
+            </div>
+            <div class="player">
+              <p>The loop an agent built with unbake</p>
+              <audio controls preload="metadata" src="media/another-medium-loop.mp3" data-pending="Recording coming soon."></audio>
+            </div>
+            <p class="pending" style="font-style:normal">Same bars, same tempo. The loop plays the song's chords, bass, drums and lead on sounds copied from one of FL Studio's demo projects.</p>
+          </div>
+        </div>
+
+        <h3>The lead, as unbake heard it (bars 5–12)</h3>
+        <div class="roll-box">
+          <div class="roll-inner">
+            <div class="chord-row" aria-hidden="true"><span>Gm11</span><span>B♭maj9</span><span>Am11</span></div>
+            <svg class="roll" viewBox="0 0 768 160" role="img" aria-label="The lead unbake heard in bars 5 to 12: 121 notes"><line class="barline" x1="96" y1="0" x2="96" y2="160"/><line class="barline" x1="192" y1="0" x2="192" y2="160"/><line class="barline" x1="288" y1="0" x2="288" y2="160"/><line class="barline" x1="384" y1="0" x2="384" y2="160"/><line class="barline" x1="480" y1="0" x2="480" y2="160"/><line class="barline" x1="576" y1="0" x2="576" y2="160"/><line class="barline" x1="672" y1="0" x2="672" y2="160"/><rect class="hit" x="0.5" y="85.5" width="5" height="4" rx="1"/><rect class="echo" x="6.5" y="145.5" width="5" height="4" rx="1"/><rect class="hit" x="12.5" y="65.5" width="5" height="4" rx="1"/><rect class="echo" x="18.5" y="125.5" width="5" height="4" rx="1"/><rect class="hit" x="24.5" y="15.5" width="5" height="4" rx="1"/><rect class="echo" x="30.5" y="75.5" width="5" height="4" rx="1"/><rect class="hit" x="36.5" y="25.5" width="5" height="4" rx="1"/><rect class="echo" x="42.5" y="85.5" width="5" height="4" rx="1"/><rect class="hit" x="48.5" y="30.5" width="5" height="4" rx="1"/><rect class="echo" x="54.5" y="90.5" width="5" height="4" rx="1"/><rect class="hit" x="60.5" y="50.5" width="5" height="4" rx="1"/><rect class="echo" x="66.5" y="110.5" width="5" height="4" rx="1"/><rect class="hit" x="72.5" y="75.5" width="5" height="4" rx="1"/><rect class="echo" x="78.5" y="135.5" width="5" height="4" rx="1"/><rect class="hit" x="84.5" y="50.5" width="5" height="4" rx="1"/><rect class="echo" x="90.5" y="110.5" width="5" height="4" rx="1"/><rect class="hit" x="96.5" y="85.5" width="5" height="4" rx="1"/><rect class="echo" x="102.5" y="65.5" width="5" height="4" rx="1"/><rect class="hit" x="108.5" y="65.5" width="5" height="4" rx="1"/><rect class="hit" x="120.5" y="110.5" width="5" height="4" rx="1"/><rect class="hit" x="132.5" y="110.5" width="5" height="4" rx="1"/><rect class="echo" x="138.5" y="110.5" width="5" height="4" rx="1"/><rect class="hit" x="144.5" y="55.5" width="5" height="4" rx="1"/><rect class="echo" x="150.5" y="110.5" width="5" height="4" rx="1"/><rect class="hit" x="156.5" y="110.5" width="5" height="4" rx="1"/><rect class="echo" x="162.5" y="135.5" width="5" height="4" rx="1"/><rect class="hit" x="168.5" y="90.5" width="5" height="4" rx="1"/><rect class="echo" x="174.5" y="150.5" width="5" height="4" rx="1"/><rect class="hit" x="180.5" y="75.5" width="5" height="4" rx="1"/><rect class="echo" x="186.5" y="135.5" width="5" height="4" rx="1"/><rect class="hit" x="192.5" y="85.5" width="5" height="4" rx="1"/><rect class="hit" x="204.5" y="65.5" width="5" height="4" rx="1"/><rect class="echo" x="210.5" y="125.5" width="5" height="4" rx="1"/><rect class="hit" x="216.5" y="15.5" width="5" height="4" rx="1"/><rect class="echo" x="222.5" y="75.5" width="5" height="4" rx="1"/><rect class="hit" x="228.5" y="25.5" width="5" height="4" rx="1"/><rect class="echo" x="234.5" y="85.5" width="5" height="4" rx="1"/><rect class="hit" x="240.5" y="30.5" width="5" height="4" rx="1"/><rect class="echo" x="246.5" y="90.5" width="5" height="4" rx="1"/><rect class="hit" x="252.5" y="110.5" width="5" height="4" rx="1"/><rect class="echo" x="258.5" y="110.5" width="5" height="4" rx="1"/><rect class="hit" x="264.5" y="75.5" width="5" height="4" rx="1"/><rect class="echo" x="270.5" y="135.5" width="5" height="4" rx="1"/><rect class="hit" x="276.5" y="50.5" width="5" height="4" rx="1"/><rect class="echo" x="282.5" y="110.5" width="5" height="4" rx="1"/><rect class="hit" x="288.5" y="110.5" width="5" height="4" rx="1"/><rect class="echo" x="294.5" y="100.5" width="5" height="4" rx="1"/><rect class="hit" x="300.5" y="65.5" width="5" height="4" rx="1"/><rect class="echo" x="306.5" y="125.5" width="5" height="4" rx="1"/><rect class="hit" x="312.5" y="40.5" width="5" height="4" rx="1"/><rect class="echo" x="318.5" y="100.5" width="5" height="4" rx="1"/><rect class="hit" x="324.5" y="50.5" width="5" height="4" rx="1"/><rect class="echo" x="330.5" y="110.5" width="5" height="4" rx="1"/><rect class="hit" x="336.5" y="55.5" width="5" height="4" rx="1"/><rect class="hit" x="348.5" y="75.5" width="5" height="4" rx="1"/><rect class="echo" x="354.5" y="135.5" width="5" height="4" rx="1"/><rect class="hit" x="360.5" y="90.5" width="5" height="4" rx="1"/><rect class="echo" x="366.5" y="150.5" width="5" height="4" rx="1"/><rect class="hit" x="372.5" y="75.5" width="5" height="4" rx="1"/><rect class="echo" x="378.5" y="135.5" width="5" height="4" rx="1"/><rect class="hit" x="384.5" y="80.5" width="5" height="4" rx="1"/><rect class="echo" x="390.5" y="115.5" width="5" height="4" rx="1"/><rect class="hit" x="396.5" y="55.5" width="5" height="4" rx="1"/><rect class="echo" x="402.5" y="90.5" width="5" height="4" rx="1"/><rect class="hit" x="408.5" y="20.5" width="5" height="4" rx="1"/><rect class="echo" x="414.5" y="55.5" width="5" height="4" rx="1"/><rect class="hit" x="420.5" y="40.5" width="5" height="4" rx="1"/><rect class="echo" x="426.5" y="75.5" width="5" height="4" rx="1"/><rect class="hit" x="432.5" y="30.5" width="5" height="4" rx="1"/><rect class="echo" x="438.5" y="65.5" width="5" height="4" rx="1"/><rect class="hit" x="444.5" y="55.5" width="5" height="4" rx="1"/><rect class="echo" x="450.5" y="90.5" width="5" height="4" rx="1"/><rect class="hit" x="456.5" y="75.5" width="5" height="4" rx="1"/><rect class="echo" x="462.5" y="110.5" width="5" height="4" rx="1"/><rect class="hit" x="468.5" y="55.5" width="5" height="4" rx="1"/><rect class="echo" x="474.5" y="90.5" width="5" height="4" rx="1"/><rect class="hit" x="480.5" y="55.5" width="5" height="4" rx="1"/><rect class="echo" x="486.5" y="115.5" width="5" height="4" rx="1"/><rect class="hit" x="492.5" y="55.5" width="5" height="4" rx="1"/><rect class="echo" x="498.5" y="150.5" width="5" height="4" rx="1"/><rect class="hit" x="504.5" y="55.5" width="5" height="4" rx="1"/><rect class="echo" x="510.5" y="55.5" width="5" height="4" rx="1"/><rect class="hit" x="516.5" y="15.5" width="5" height="4" rx="1"/><rect class="echo" x="522.5" y="50.5" width="5" height="4" rx="1"/><rect class="hit" x="528.5" y="5.5" width="5" height="4" rx="1"/><rect class="echo" x="534.5" y="40.5" width="5" height="4" rx="1"/><rect class="hit" x="540.5" y="15.5" width="5" height="4" rx="1"/><rect class="echo" x="546.5" y="50.5" width="5" height="4" rx="1"/><rect class="hit" x="552.5" y="20.5" width="5" height="4" rx="1"/><rect class="echo" x="558.5" y="55.5" width="5" height="4" rx="1"/><rect class="hit" x="564.5" y="40.5" width="5" height="4" rx="1"/><rect class="echo" x="570.5" y="75.5" width="5" height="4" rx="1"/><rect class="hit" x="576.5" y="80.5" width="5" height="4" rx="1"/><rect class="echo" x="582.5" y="115.5" width="5" height="4" rx="1"/><rect class="hit" x="588.5" y="55.5" width="5" height="4" rx="1"/><rect class="echo" x="594.5" y="90.5" width="5" height="4" rx="1"/><rect class="hit" x="600.5" y="55.5" width="5" height="4" rx="1"/><rect class="echo" x="606.5" y="55.5" width="5" height="4" rx="1"/><rect class="hit" x="612.5" y="40.5" width="5" height="4" rx="1"/><rect class="echo" x="618.5" y="75.5" width="5" height="4" rx="1"/><rect class="hit" x="624.5" y="80.5" width="5" height="4" rx="1"/><rect class="echo" x="630.5" y="65.5" width="5" height="4" rx="1"/><rect class="hit" x="636.5" y="55.5" width="5" height="4" rx="1"/><rect class="echo" x="642.5" y="40.5" width="5" height="4" rx="1"/><rect class="hit" x="648.5" y="75.5" width="5" height="4" rx="1"/><rect class="echo" x="654.5" y="110.5" width="5" height="4" rx="1"/><rect class="hit" x="660.5" y="40.5" width="5" height="4" rx="1"/><rect class="echo" x="666.5" y="75.5" width="5" height="4" rx="1"/><rect class="hit" x="672.5" y="80.5" width="5" height="4" rx="1"/><rect class="echo" x="678.5" y="115.5" width="5" height="4" rx="1"/><rect class="hit" x="684.5" y="55.5" width="5" height="4" rx="1"/><rect class="hit" x="696.5" y="20.5" width="5" height="4" rx="1"/><rect class="echo" x="702.5" y="55.5" width="5" height="4" rx="1"/><rect class="hit" x="708.5" y="40.5" width="5" height="4" rx="1"/><rect class="hit" x="720.5" y="5.5" width="5" height="4" rx="1"/><rect class="hit" x="732.5" y="15.5" width="5" height="4" rx="1"/><rect class="echo" x="738.5" y="75.5" width="5" height="4" rx="1"/><rect class="hit" x="744.5" y="20.5" width="5" height="4" rx="1"/><rect class="echo" x="750.5" y="55.5" width="5" height="4" rx="1"/><rect class="hit" x="756.5" y="40.5" width="5" height="4" rx="1"/><rect class="echo" x="762.5" y="75.5" width="5" height="4" rx="1"/></svg>
+          </div>
+        </div>
+        <div class="legend"><span><span class="swatch"></span>the tune, on every 8th note</span><span><span class="swatch faint"></span>its answer, a 16th later</span></div>
+        <p class="section-intro" style="margin-top:12px">The song repeats this 8-bar line six times. unbake keeps the 121 notes its repeats agree on, so a note that one repeat hides behind another instrument still shows up. That pattern, an octave down over the first two chords and a fifth down over Am, is the kind of thing worth learning from a song.</p>
+
+        <div class="grid-2" style="margin-top:24px">
+          <div class="card split">
+            <h3>From the song</h3>
+            <ul class="ticks good">
+              <li>the tempo, key and section layout</li>
+              <li>the chords and where they change</li>
+              <li>the bass line, the drum groove and the lead tune</li>
+              <li>the stems, cut to the same bars, on muted tracks</li>
+            </ul>
+          </div>
+          <div class="card split">
+            <h3>Not from the song</h3>
+            <ul class="ticks hard">
+              <li>every sound and effect, copied from FL Studio's demo projects by real producers</li>
+              <li>the mix: levels are set by ear and by comparing renders</li>
+              <li>anything unbake couldn't hear clearly, which the agent asks you about</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="how">
+      <div class="wrap">
+        <h2>How it works</h2>
+        <p class="section-intro">unbake runs on your computer and does the listening and the file writing. The agent does the musical choices, and you listen.</p>
+        <ol class="steps">
+          <li><strong>Split</strong><p>Demucs separates the song into drums, bass, other and vocals.</p></li>
+          <li><strong>Listen</strong><p>unbake finds the tempo, key, sections, chords and drum hits, and Basic Pitch turns the bass and other stems into notes. Each result says how sure it is.</p></li>
+          <li><strong>Build</strong><p>The agent picks a reference from FL Studio's demo songs, copies its sounds and effects, and writes the song's parts. Drum samples are chosen by how they sound next to the song's own hits.</p></li>
+          <li><strong>Check</strong><p>unbake renders the project through FL Studio and compares each part with its stem. The agent changes one thing at a time and keeps it only if the part got closer.</p></li>
+          <li><strong>You steer</strong><p>The agent stops to ask you: the genre, the sounds, how each loop sounds. Or ask it to work alone and report every choice.</p></li>
+        </ol>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap grid-2">
+        <div>
+          <h2>What you get</h2>
+          <ul class="ticks">
+            <li>a <code>.flp</code> with the song's tempo and section markers</li>
+            <li>a pattern for each part and section, with names you can read</li>
+            <li>channels copied from FL Studio's demo projects, with their plugin, preset and mixer effects</li>
+            <li>the song's drums, bass, other and vocals stems as muted audio clips</li>
+            <li>the agent's notes on each choice: chord names, what repeats, what it wasn't sure about</li>
+          </ul>
+        </div>
+        <div>
+          <h2>Where it stands</h2>
+          <ul class="ticks good">
+            <li>Tempo, key, sections, chords, drum grooves and bass lines are usually right.</li>
+            <li>Projects open cleanly in FL Studio, with every sample found.</li>
+          </ul>
+          <ul class="ticks hard">
+            <li>The lead melody is often wrong when several instruments play at once.</li>
+            <li>Filter sweeps and fades need automation clips, which unbake can't write yet.</li>
+            <li>It assumes 4/4 on a straight grid, and it's been tested mostly on electronic instrumentals.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="wrap">
+        <h2>Try it on a song you love</h2>
+        <p class="section-intro" style="margin:0 auto 20px">You need Windows, FL Studio 2024 or later, and an AI agent such as Claude Code.</p>
+        <div class="actions">
+          <a class="btn primary" href="install.html">Install</a>
+          <a class="btn" href="guide.html">Read the guide</a>
+          <a class="btn" href="contribute.html">Help build it</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>unbake is for studying music. Its projects hold the song's own stems, so only share or release what you have the rights to. The reference sounds come from your own FL Studio install, and nothing from Image-Line ships with unbake.</p>
+      <p>unbake is not affiliated with Image-Line. FL Studio is a trademark of Image-Line.</p>
+      <p>Made by <a href="https://github.com/Qznad">Qznad</a>, AI-assisted. Built on <a href="https://github.com/facebookresearch/demucs">Demucs</a> and <a href="https://github.com/spotify/basic-pitch">Basic Pitch</a>.</p>
+    </div>
+  </footer>
+  <script src="site.js"></script>
+</body>
+</html>

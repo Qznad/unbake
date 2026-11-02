@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contribute to unbake</title>
+  <meta name="description" content="Open problems in unbake, how to set up the code, and where things live.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="wordmark" href="./"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>unbake</a>
+      <nav aria-label="Main">
+        <a href="./#example">Example</a>
+        <a href="guide.html">Guide</a>
+        <a href="install.html">Install</a>
+        <a href="contribute.html" aria-current="page">Contribute</a>
+        <a href="https://github.com/Qznad/unbake">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap narrow doc">
+    <section>
+      <p class="eyebrow">Contribute</p>
+      <h1>Help build unbake</h1>
+      <p class="lede">unbake is written in Rust, with Demucs and Basic Pitch run as outside programs. Ideas, bug reports, test songs and code are all welcome. Open an issue first if you plan something big, so we can talk it through.</p>
+
+      <h2>Open problems</h2>
+      <h3>The lead melody</h3>
+      <p>Demucs puts every instrument that isn't drums, bass or vocals into one "other" stem, and Basic Pitch hears maybe half of a busy lead in it. unbake picks the loudest note per step, votes across the song's repeats, and tidies the line, but the lead is still often wrong. Better separation of the lead, or a transcriber that copes with mixed stems, would help most.</p>
+      <h3>Automation clips</h3>
+      <p>Filter sweeps and fades are everywhere in electronic music, and unbake can't write them yet, so agents have to ask the user to draw them. This means working out how FL Studio stores automation clips in a <code>.flp</code> and adding them to <code>compose</code>.</p>
+      <h3>macOS</h3>
+      <p>The listening side runs anywhere, but reference sounds, sample search and rendering look for FL Studio's Windows folders. FL Studio's folders on macOS differ, and nobody has tried them yet.</p>
+      <h3>More kinds of music</h3>
+      <p>unbake assumes 4/4 on a straight 16th-note grid, and it has been tuned on a handful of electronic instrumentals. Swing, triplets, other meters and sung melodies all need work, and songs to test them on.</p>
+
+      <h2>Set up</h2>
+      <p>Follow <a href="install.html">Install</a> to get the tools, then:</p>
+<pre><code>git clone https://github.com/Qznad/unbake
+cd unbake
+cargo build --release
+cargo test</code></pre>
+      <p>Before a pull request, these should all pass:</p>
+<pre><code>cargo test
+cargo clippy
+cargo fmt --check</code></pre>
+      <p>Clippy should give no warnings. The test songs aren't in the repo, since they're copyrighted, so the tests build their own audio and projects.</p>
+      <p>Code style: every function has exactly one short lowercase comment line above it saying what it does, and there are no other comments.</p>
+      <p>While an agent runs the MCP server, Windows locks <code>unbake.exe</code> and <code>cargo build</code> fails. Point your <code>.mcp.json</code> at a copy of the exe to avoid it.</p>
+
+      <h2>Where things live</h2>
+      <div class="table-box">
+        <table>
+          <thead><tr><th>Area</th><th>Files in <code>src/</code></th></tr></thead>
+          <tbody>
+            <tr><td>Listening</td><td><code>analysis/</code> (tempo, onsets, drums, pitch, key, chords, sections), <code>separate.rs</code> (Demucs), <code>basic_pitch.rs</code>, <code>findings.rs</code> and <code>evidence.rs</code> (each result with its confidence and unknowns)</td></tr>
+            <tr><td>Reading the song</td><td><code>views.rs</code> (overview, grids, harmony, repeating parts), <code>song_map.rs</code> (the section timeline), <code>listen.rs</code> (levels, what a stretch sounds like), <code>clues.rs</code> (signs of delay, reverb, pumping), <code>drum_sounds.rs</code> (matching drum samples to the song's hits)</td></tr>
+            <tr><td>Writing projects</td><td><code>flp/</code> (the FL Studio project reader and writer), <code>compose.rs</code> (a project from a JSON description), <code>combine.rs</code> (section loops into one song), <code>rebuild.rs</code> (the note-for-note pipeline)</td></tr>
+            <tr><td>Checking</td><td><code>check.rs</code> (notes against what the song plays), <code>render.rs</code> and <code>compare_render.rs</code> (render through FL Studio and compare with the stems), <code>eval.rs</code> (score against a real project)</td></tr>
+            <tr><td>Agents</td><td><code>mcp.rs</code> (the MCP server), <code>tools.rs</code>, <code>doctor.rs</code>, and <code>skills/unbake/SKILL.md</code>, the workflow the server sends to every agent</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Measuring a change</h2>
+      <p>Music is easy to fool yourself about, so say what you measured and on which songs. <code>unbake eval</code> scores a rebuild against a real FL Studio project of the same song: drums, bass, melody, chords and patterns. If you have FL projects of your own songs, they make the best test cases.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>unbake is not affiliated with Image-Line. FL Studio is a trademark of Image-Line.</p>
+      <p>Made by <a href="https://github.com/Qznad">Qznad</a>, AI-assisted.</p>
+    </div>
+  </footer>
+  <script src="site.js"></script>
+</body>
+</html>
